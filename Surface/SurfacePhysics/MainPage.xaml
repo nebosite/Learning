@@ -1,0 +1,16 @@
+﻿<Page
+    x:Class="SurfacePhysics.MainPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:canvas="using:Microsoft.Graphics.Canvas.UI.Xaml"
+    xmlns:local="using:SurfacePhysics"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Unloaded="Page_Unloaded"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+
+    <Grid>
+        <canvas:CanvasAnimatedControl x:Name="TheCanvas" Draw="DrawFrame" Update="TheCanvas_Update" CreateResources="TheCanvas_CreateResources"/>
+    </Grid>
+</Page>
