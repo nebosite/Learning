@@ -10,7 +10,7 @@
     Unloaded="Page_Unloaded"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
 
-    <Grid>
+    <Grid PointerPressed="Pointer_Pressed" PointerReleased="Pointer_Released" PointerMoved="Pointer_Moved">
         <canvas:CanvasAnimatedControl x:Name="TheCanvas" Draw="DrawFrame" Update="TheCanvas_Update" CreateResources="TheCanvas_CreateResources"/>
     </Grid>
 </Page>

@@ -13,6 +13,8 @@ using MG = Microsoft.Xna.Framework;
 using VelcroPhysics.Utilities;
 using VelcroPhysics.Factories;
 using System.Collections.Generic;
+using System;
+using System.Linq;
 
 
 // The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
@@ -25,34 +27,36 @@ namespace SurfacePhysics
     public sealed partial class MainPage : Page
     {
         private readonly World _world;
-        private List<Body> _circleBodies = new List<Body>();
-        private Body _groundBody;
-        const float PixelsPerMeter = 14.0f;
+        private List<PhysicsObject> _objects = new List<PhysicsObject>();
+        float _pixelsPerMeter = 20;
+        MG.Vector2 _screenOrigin = new MG.Vector2(600, 800);
+
+
 
         public MainPage()
         {
+            var random = new Random();
             this.InitializeComponent();
             _world = new World(new MG.Vector2(0, 9.82f));
-            ConvertUnits.SetDisplayUnitToSimUnitRatio(PixelsPerMeter); // pixels per meter
-            for(int i = 0; i < 3; i++)
+          
+
+
+            for(int x = -4; x < 4; x++)
             {
-                var circleBody = BodyFactory.CreateCircle(
-                    _world,
-                    1f, // radius
-                    1f, // density
-                    new MG.Vector2(i / 2.0f, -15 + i * 2.8f),
-                    BodyType.Dynamic);
-                circleBody.Restitution = 0.8f;
-                circleBody.Friction = 0.2f;
-                _circleBodies.Add(circleBody);
+                for (int y = -14; y < -4; y++)
+                {
+                    _objects.Add(new Ball(_world, .4f, x + ((float)random.NextDouble()/2), y + ((float)random.NextDouble() / 2)));
+                }
             }
 
-            _groundBody = BodyFactory.CreateRectangle(_world, 50,1, 1f, new MG.Vector2(0,0));
-            _groundBody.BodyType = BodyType.Static;
-            _groundBody.Restitution = 0.3f;
-            _groundBody.Friction = 0.5f;
+            _objects.Add(new StickyBlock(_world, 50, 1, 0, 0, 0));
+            _objects.Add(new StickyBlock(_world, 1, 1, 0, -2, 0));
+            _objects.Add(new StickyBlock(_world, 1, 10, -20, -5, 0));
+            _objects.Add(new StickyBlock(_world, 1, 10, 20, -5, 0));
+
         }
 
+        
 
         CanvasCommandList _helloWorld;
         private void CanvasDraw(CanvasAnimatedControl sender, CanvasDrawEventArgs args)
@@ -83,36 +87,56 @@ namespace SurfacePhysics
 
             //args.DrawingSession.DrawCircle(_circle.Position.X, _circle.Position.Y, 10, Colors.Green);
 
-            foreach(var circleBody in _circleBodies)
+            foreach(var drawMe in _objects)
             {
-                var circlePosition = ConvertUnits.ToDisplayUnits(circleBody.WorldCenter);
-                var circleRadius = ConvertUnits.ToDisplayUnits(1f);
-                args.DrawingSession.DrawCircle(circlePosition.X + 600, circlePosition.Y + 500, circleRadius, Colors.Green);
-
+                drawMe.DrawMe(args.DrawingSession, new MG.Vector2(600, 800), _pixelsPerMeter);
             }
-
-            var groundPosition = ConvertUnits.ToDisplayUnits(_groundBody.WorldCenter);
-            var groundWidth = ConvertUnits.ToDisplayUnits(50);
-            var groundHeight = ConvertUnits.ToDisplayUnits(1);
-            var groundRectangle = new Rect(
-                groundPosition.X + 600 - groundWidth / 2,
-                groundPosition.Y + 500 - groundHeight / 2,
-                groundWidth,
-                groundHeight);
-            args.DrawingSession.DrawRectangle(groundRectangle, Colors.Brown);
 
         }
 
         private void TheCanvas_Update(ICanvasAnimatedControl sender, CanvasAnimatedUpdateEventArgs args)
         {
-            //_circle.Velocity += new MG.Vector2(0, 1);
-            //_circle.Position += _circle.Velocity;
-            //if (_circle.Position.Y > 500)
-            //{
-            //    _circle.Position.Y = 500;
-            //    _circle.Velocity.Y *= -1;
-            //}
+            foreach(var activePoint in _activePoints.Values.ToArray())
+            {
+                foreach(Ball ball in _objects.Where(o => o is Ball))
+                {
+                    if(Math.Abs(ball.WorldPostition.X - activePoint.X ) < 1)
+                    {
+                        ball.AddVelocity(0, -.8f);
+                    }
+                }
+            }
             _world.Step((float)args.Timing.ElapsedTime.TotalSeconds);
+        }
+
+        Dictionary<uint, MG.Vector2> _activePoints = new Dictionary<uint, MG.Vector2>();
+        private void SetActivePointer(Windows.UI.Xaml.Input.PointerRoutedEventArgs e)
+        {
+            var point = e.GetCurrentPoint(TheCanvas);
+            var worldPosition = (new MG.Vector2((float)point.Position.X, (float)point.Position.Y) - _screenOrigin) / _pixelsPerMeter;
+            _activePoints[e.Pointer.PointerId] = worldPosition;
+        }
+
+
+        private void Pointer_Pressed(object sender, Windows.UI.Xaml.Input.PointerRoutedEventArgs e)
+        {
+            SetActivePointer(e);
+        }
+
+        private void Pointer_Released(object sender, Windows.UI.Xaml.Input.PointerRoutedEventArgs e)
+        {
+
+            _activePoints.Remove(e.Pointer.PointerId);
+        }
+
+        private void Pointer_Moved(object sender, Windows.UI.Xaml.Input.PointerRoutedEventArgs e)
+        {
+            if(_activePoints.ContainsKey(e.Pointer.PointerId))
+            {
+                SetActivePointer(e);
+            }
+            // Prevent most handlers along the event route from handling the same event again.
+            e.Handled = true;
         }
     }
 }
