@@ -28,7 +28,7 @@ export default class AppComponent extends React.Component {
 
   handleInputChanged(args)
   {
-    this.setState({myState: 'wow'});
+    this.setState({myState: args.target.value});
   }
 
   handleKeyUp(args)
