@@ -28,6 +28,15 @@
   text-align: left
 }
 
+.statusBox
+{
+  text-align: left;
+  border: 2;
+  border-color:black;
+  border-style: double;
+  background-color: lightsteelblue;
+}
+
 @keyframes App-logo-spin {
   from {
     transform: rotate(0deg);
