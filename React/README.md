@@ -6,18 +6,18 @@ For react in general:
 
 * Install Node.js from https://nodejs.org/en/
 * npm install -g create-react-app
-* npm install -g react-scripts
-* npm install -g react-dom
-* npm install -g react-native
-* npm install -g react-native-web
-* npm install -g react-art
-* npm install -g react-router-native
-* npm install -g react-router-dom
-
 
 ## Create a new project
 
     create-react-app [name]
+    npm install react-scripts --save
+    npm install react-dom --save
+    npm install react-native --save
+    npm install react-native-web --save
+    npm install react-art --save
+    npm install react-router-native --save
+    npm install react-router-dom --save
+
 
 THis will create a project in a folder of the same name
 
