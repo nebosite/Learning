@@ -1,0 +1,15 @@
+{
+  "files": {
+    "main.css": "/reacthello/static/css/main.c6f97728.chunk.css",
+    "main.js": "/reacthello/static/js/main.1deb3e49.chunk.js",
+    "main.js.map": "/reacthello/static/js/main.1deb3e49.chunk.js.map",
+    "runtime~main.js": "/reacthello/static/js/runtime~main.c3b45a10.js",
+    "runtime~main.js.map": "/reacthello/static/js/runtime~main.c3b45a10.js.map",
+    "static/js/2.65aa1cca.chunk.js": "/reacthello/static/js/2.65aa1cca.chunk.js",
+    "static/js/2.65aa1cca.chunk.js.map": "/reacthello/static/js/2.65aa1cca.chunk.js.map",
+    "index.html": "/reacthello/index.html",
+    "precache-manifest.31577ff167b29b6a581c84c4a2aa9f83.js": "/reacthello/precache-manifest.31577ff167b29b6a581c84c4a2aa9f83.js",
+    "service-worker.js": "/reacthello/service-worker.js",
+    "static/css/main.c6f97728.chunk.css.map": "/reacthello/static/css/main.c6f97728.chunk.css.map"
+  }
+}
