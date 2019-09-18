@@ -1,0 +1,104 @@
+﻿<Window
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:DV="clr-namespace:System.Windows.Controls.DataVisualization;assembly=System.Windows.Controls.DataVisualization.Toolkit"
+        xmlns:DVC="clr-namespace:System.Windows.Controls.DataVisualization.Charting;assembly=System.Windows.Controls.DataVisualization.Toolkit"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="d" x:Class="SkyNet.MainWindow"
+        Title="{Binding WindowTitle}" Height="795.5" Width="1337.985"
+        Closing="Window_Closing" Icon="skyneticon.ico">
+    <Grid>
+        <StackPanel Margin="10,10,0,10" HorizontalAlignment="Left" Width="585">
+            <StackPanel Orientation="Horizontal">
+                <Label Content="Time Dilation:  "/>
+                <Slider Value="{Binding TimeDilation}" Minimum="1" Maximum="1000" Width="200" />
+                <Label Content="{Binding TimeDilation}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal">
+                <Label Content="Zoom:  "/>
+                <Slider Value="{Binding FieldOfView}" Minimum="1" Maximum="10" Width="200" />
+                <Label Content="{Binding FieldOfView}"/>
+            </StackPanel>
+
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Label Content="Generation Type:  "/>
+                    <ComboBox ItemsSource="{Binding SatelliteGenerators}" DisplayMemberPath="Name" SelectedItem="{Binding SelectedGenerator}" Width="120" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Label Content="Satellite Count:  "/>
+                    <Slider Value="{Binding SatelliteCount}" Minimum="1" Maximum="1000" Width="180" />
+                    <Label Content="{Binding SatelliteCount}" Width="35"/>
+                    <Button Content="Regenerate" Click="Regenerate_Click" />
+                </StackPanel>
+
+
+            </StackPanel>
+
+            <StackPanel>
+                <Border BorderThickness="2" BorderBrush="Blue">
+                    <StackPanel>
+                        <Label Content="Satellite Coverage Heat Map" FontWeight="Bold"/>
+                        <CheckBox Content="Enabled" IsChecked="{Binding HeatmapEnabled}" />
+                        <StackPanel Orientation="Horizontal">
+                            <Label Content="Prime Coverage:  "/>
+                            <Slider Value="{Binding PrimeCoverage}" Minimum="1" Maximum="100" Width="150" />
+                            <Label Content="{Binding PrimeCoverage}"/>
+                            <Label Content=" satellites"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+                <Border BorderThickness="2" BorderBrush="Blue">
+                    <StackPanel>
+                        <Label Content="Measurement" FontWeight="Bold" />
+                        <StackPanel Orientation="Horizontal" >
+                            <Label Content="Latitude:" Width="120" />
+                            <TextBox Text="{Binding MeasurementLatitude}" Width="80" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" >
+                            <Label Content="Longitude:"  Width="120" />
+                            <TextBox Text="{Binding MeasurementLongitude}"  Width="80"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" >
+                            <Label Content="Sampling Interval (s):"  Width="120" />
+                            <TextBox Text="{Binding SamplingIntervalSeconds}"  Width="80"/>
+                        </StackPanel>
+                        <DVC:Chart x:Name="MyChart" Background="Beige" Height="300" Margin="10,10,10,0">
+                            <DVC:Chart.Axes>
+                                <DVC:LinearAxis Orientation="Y" ShowGridLines="True"  Interval="5" Minimum="0" Maximum="30" Title="Coverage"/>
+                                <DVC:LinearAxis Orientation="X" ShowGridLines="True"  Title="Hours"  />
+                            </DVC:Chart.Axes>
+                        </DVC:Chart>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+
+
+        </StackPanel>
+
+        <Border Margin="600,34,10,10" Background="Black">
+            <Viewport3D x:Name="Planet3DDisaply" 
+                MouseWheel="Planet3DDisplay_MouseWheel"
+			    MouseDown= "Planet3DDisplay_MouseDown"
+			    MouseMove= "Planet3DDisplay_MouseMove"
+			    MouseUp=   "Planet3DDisplay_MouseUp"
+            >
+
+                <Viewport3D.Camera>
+                    <PerspectiveCamera x:Name="earthCamera" Position="0,0000,-200000" FieldOfView="{Binding FieldOfView}" LookDirection="0,0,1" />
+                </Viewport3D.Camera>
+                <ModelVisual3D>
+                    <ModelVisual3D.Content>
+                        <DirectionalLight x:Name="dirLightMain" Direction="0,-1,1" Color="White" />
+                    </ModelVisual3D.Content>
+                </ModelVisual3D>
+                <ModelVisual3D>
+                    <ModelVisual3D.Content>
+                        <AmbientLight Color="#404040" />
+                    </ModelVisual3D.Content>
+                </ModelVisual3D>
+                <ModelVisual3D x:Name="EarthScene" />
+            </Viewport3D>
+        </Border>
+    </Grid>
+</Window>
