@@ -1,0 +1,40 @@
+﻿TODO
+
+v 0.4.0.0
+	[x] Random vs regular spacing module
+	[ ] Report on NY Coverage  
+		  40.728053° N  ,   -73.996552° W
+		  .45253, -.4111
+		  
+	[ ] Simple Routing
+	[ ] Visualize routing
+	[ ] report routing info
+
+
+v Later
+	[ ] Save state
+	[ ] Make sure the coverage circle is the correct size
+	[ ] Plugins: deployment, node code, reporting
+	[ ] Write a TCP simulator
+		Write you own TCPIP stack: http://events.ccc.de/congress/2005/fahrplan/attachments/630-muXTCP-22c3.pdf
+		Layout of the layers:  http://www.thegeekstuff.com/2011/11/tcp-ip-fundamentals/
+		Socket-level TCPIP: http://alumni.cs.ucr.edu/~ecegelal/TAw/socketTCP.pdf 
+		C# Implementation with code: http://stackoverflow.com/questions/869744/how-to-write-a-scalable-tcp-ip-based-server 
+
+DONE
+
+v 0.3.0.0
+	[x] Installer
+	[x] Scale slider
+	[x] Mousewheel scaling	
+
+v 0.2.0.0
+	[x] Clean up heatmap code and other code in general
+	[x] Draw on a black background
+	[x] Slider for what "white" is on the heatmap
+	[x] Toggle heat map
+	[x] Slider and button for number of satellites
+
+V 0.1.0.0	
+	[x] Add Version
+	[x] Create a release
