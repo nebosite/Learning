@@ -1,0 +1,36 @@
+.clickable
+	cursor: pointer
+
+.fl
+	display: flex
+
+.flc
+	@extend .fl
+	flex-direction: column
+
+.justify-center
+	justify-content: center
+	justify-items: center
+
+.align-center
+	align-content: center
+	align-items: center
+
+.fl-center-x
+	@extend .fl, .justify-center
+
+.fl-center-y
+	@extend .fl, .align-center
+
+.fl-center-all
+	@extend .fl-center-x, .align-center
+
+.flc-center-x
+	@extend .flc, .align-center
+
+.flc-center-y
+	@extend .flc, .justify-center
+
+.flc-center-all
+	@extend .fl-center-x, .align-center
+
