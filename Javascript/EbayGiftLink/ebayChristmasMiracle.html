@@ -1,0 +1,15 @@
+
+<h2>Ebay gift page</h2>
+
+You should go automatically to ebay in 5 seconds.  
+
+<p/>
+<script>
+    var characters = 'abcdefghijklmnopqrstuvwxyz';
+    var letter1 = characters.charAt(Math.floor(Math.random() * 26));
+    var letter2 = characters.charAt(Math.floor(Math.random() * 26));
+    var url = 'https://www.ebay.com/sch/i.html?_from=R40&_nkw=' + letter1 + '&_in_kw=1&_ex_kw=sweater+shirt+sleeve+jeans+pants+dress+blouse+shorts+book+skirt+coat+jacket+shoes+floral+gathering+bra+panties+underwear+topps+fleer+bikini+sleeveless+knit+casual&_sacat=0&_mPrRngCbx=1&_udlo=&_udhi=10&LH_Auction=1&LH_Time=1&_ftrt=901&_ftrv=1&_sabdlo=&_sabdhi=&_samilow=&_samihi=&_sadis=1000&_stpos=98208&_fsradio2=%26LH_PrefLoc%3D1&_sargn=-1%26saslc%3D1&_salic=1&LH_SubLocation=1&_sop=1&_dmd=1&_ipg=200&_fosrp=1'
+    document.write('<a href="' + url + '">Click here</a>');
+
+    window.location.href = url;
+</script>
