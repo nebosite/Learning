@@ -1,6 +1,11 @@
+<div id="myMessage" >Hello World</div>
 <canvas id="gameCanvas" width="800" height="600" />
+
 <script>
     // Can I draw a circle?
+    const myMessage = document.getElementById("myMessage");
+    myMessage.innerText = "Hello there";
+
     console.log("Hello");
     console.log("This is logging!");
     console.log("So cool!");
@@ -22,8 +27,23 @@
     console.log(`Getting ready to draw stuff...`);
     drawContext.fillStyle = "lightgray"
     drawContext.fillRect(0, 0, width, height);
-    circle("red", 200,200,10);
+    circle("red", 100,200,10);
+
+    y = 250;
+    circle("green", 100,y,20);
+    y = y + 50;
+    circle("green", 100,y,20);
+    y += 50;
+    circle("green", 100,y,20);
+
+    for(x = 0; x < 20; x++){
+        circle("blue", x * 30 + 200,200,15);
+        circle("white", x * 30 + 200,200,12);
+    }
+
+
     console.log(`All done!`);
 
+    
 
 </script>
