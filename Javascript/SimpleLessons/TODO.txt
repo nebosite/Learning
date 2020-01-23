@@ -1,0 +1,15 @@
+
+
+Ideas for projects
+    [ ] Linear keyboard racing game
+    [ ] Number guessing game with a simple form  (pictures and sound, maybe)
+    [ ] Very basic text dungeon.  Simple commands: directions, get, drop, inventory
+    [ ] Tile game walk around and collect
+
+
+TODO
+    [ ] Figure out if there is a way to draw SVG files, if so, how can we make svgs?
+    [ ] When making lessons, be sure to add links for additional learning
+
+
+DONE

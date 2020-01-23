@@ -1,0 +1,29 @@
+<canvas id="gameCanvas" width="800" height="600" />
+<script>
+    // Can I draw a circle?
+    console.log("Hello");
+    console.log("This is logging!");
+    console.log("So cool!");
+    const canvas = document.getElementById("gameCanvas");
+    const drawContext = canvas.getContext("2d");
+    const width=canvas.width;
+    const height=canvas.height;
+    console.log(`Canvas size is: ${width}, ${height}`);
+
+    function circle(color, x, y, r) {
+        console.log(`Drawing a circle: at ${x},${y} with radius ${r}`);
+        drawContext.fillStyle = color;
+        drawContext.beginPath();
+        drawContext.moveTo(x,y);
+        drawContext.ellipse(x,y,r,r,0,-Math.PI * 2,0,false);
+        drawContext.fill();
+    }
+
+    console.log(`Getting ready to draw stuff...`);
+    drawContext.fillStyle = "lightgray"
+    drawContext.fillRect(0, 0, width, height);
+    circle("red", 200,200,10);
+    console.log(`All done!`);
+
+
+</script>
