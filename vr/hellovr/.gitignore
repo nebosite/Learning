@@ -1,0 +1,5 @@
+node_modules/
+**/crash*.txt
+
+# for this project, we want the stuff in bin
+!bin/jenkit.js
