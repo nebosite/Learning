@@ -1,21 +1,17 @@
 import * as BABYLON from "babylonjs";
 import { AbstractMesh } from "babylonjs";
 
-// Get the canvas DOM element
-var canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
+// Some global handles for graphics
+const theCanvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
+const engine = new BABYLON.Engine(
+    theCanvas, 
+    true, 
+    {
+        preserveDrawingBuffer: true,
+        stencil: true,
+    });
 
-// Load the 3D engine
-var engine: BABYLON.Engine;
-
-// -------------------------------------------------------------------------------
-// createDefaultEngine
-// -------------------------------------------------------------------------------
-var createDefaultEngine = function () {
-  return new BABYLON.Engine(canvas, true, {
-    preserveDrawingBuffer: true,
-    stencil: true,
-  });
-};
+if (!engine) throw "Unable to create an engine!";
 
 // -------------------------------------------------------------------------------
 // Create scene
@@ -28,7 +24,7 @@ var createScene = async function () {
         scene
     );
     camera.setTarget(BABYLON.Vector3.Zero());
-    camera.attachControl(canvas, true);
+    camera.attachControl(theCanvas, true);
 
     // Add a light
     var light = new BABYLON.HemisphericLight(
@@ -55,17 +51,11 @@ var createScene = async function () {
 // -------------------------------------------------------------------------------
 // Run the game
 // -------------------------------------------------------------------------------
-const giddyUp = async function () {
-    engine = createDefaultEngine();
-    if (!engine) throw "Unable to create an engine!";
-
+(async function () {
     const sceneToRender = await createScene();
     if(!sceneToRender) throw "Unable to create a scene!";
 
-    // Add a handler for Resize
     window.addEventListener("resize", () => { engine.resize(); });
     engine.runRenderLoop(() => sceneToRender.render())
-}
-
-giddyUp();
+})()
 

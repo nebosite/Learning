@@ -5,9 +5,9 @@
   "main": "index.js",
   "scripts": {
     "build": "webpack --config webpack.prod.js",
+    "start": "webpack serve --config webpack.dev.js --progress --profile --content-base src/",
     "start_broken": "/* NOTE:  as of 2020/12/30 there is an incompatibility with webpack-cli and webpack-dev-server */  webpack-dev-server --open --config webpack.dev.js --host localhost",
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "servedev": "webpack serve --config webpack.dev.js --progress --profile --content-base src/"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
