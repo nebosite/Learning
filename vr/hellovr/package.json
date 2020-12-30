@@ -24,5 +24,7 @@
     "webpack-dev-server": "^3.11.0",
     "webpack-merge": "^5.7.3"
   },
-  "dependencies": {}
+  "dependencies": {
+    "perlin-noise-3d": "^0.5.4"
+  }
 }
