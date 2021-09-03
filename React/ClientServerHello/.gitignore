@@ -1,0 +1,30 @@
+
+sql_auth.json
+dist*/
+deploy
+
+# newrelic
+newrelic*.log
+
+# vim swp files
+.vimrc
+*.swp
+
+# OSX os files
+.DS_Store
+.DS_Store?
+
+# SASS
+.sass-cache
+*.css.map
+
+# NODE
+node_modules
+
+# IntelliJ
+.idea
+*.iml
+
+# Porter
+.porter*
+porter

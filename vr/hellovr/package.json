@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "webpack --config webpack.prod.js",
-    "start": "webpack serve --config webpack.dev.js --progress --profile --content-base src/",
+    "start": "webpack serve --host galaga --config webpack.dev.js --progress --profile --content-base src/",
     "start_broken": "/* NOTE:  as of 2020/12/30 there is an incompatibility with webpack-cli and webpack-dev-server */  webpack-dev-server --open --config webpack.dev.js --host localhost",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -25,6 +25,7 @@
     "webpack-merge": "^5.7.3"
   },
   "dependencies": {
+    "perlin-noise": "0.0.1",
     "perlin-noise-3d": "^0.5.4"
   }
 }

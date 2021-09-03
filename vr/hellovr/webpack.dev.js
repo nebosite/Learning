@@ -8,7 +8,7 @@ module.exports = mergeTools.merge(common, {
   devtool: 'inline-source-map',
 //   devtool: 'source-map',
   devServer: {  
-      port: 8080,
+      port: 1337,
       contentBase: path.join(__dirname, 'dist'),
       watchContentBase: true
   },

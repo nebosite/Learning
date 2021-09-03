@@ -1,8 +1,10 @@
 import * as BABYLON from "babylonjs";
 import { AbstractMesh } from "babylonjs";
-const perlinNoise3d = require('perlin-noise-3d');
-const noise = new perlinNoise3d();
-noise.noiseSeed(1);
+//const perlinNoise3d = require('perlin-noise-3d');
+import perlinNoise3d from "./perlin";
+//const perlinNoise3d = require('./perlin');
+const noise = new perlinNoise3d(16);
+noise.noiseSeed(.3);
 
 // Some global handles for graphics
 const theCanvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
@@ -16,12 +18,13 @@ const engine = new BABYLON.Engine(
 
 if (!engine) throw "Unable to create an engine!";
 
+
 // -------------------------------------------------------------------------------
 // Create scene
 // -------------------------------------------------------------------------------
 var createScene = async function () {
     const scene = new BABYLON.Scene(engine);
-    var camera = new BABYLON.FreeCamera(
+    var camera = new BABYLON.UniversalCamera(
         "camera1",
         new BABYLON.Vector3(0, 125, -150),
         scene
@@ -38,15 +41,20 @@ var createScene = async function () {
     light.intensity = 0.7;
 
     // Add an object
-    var sphere = BABYLON.Mesh.CreateSphere("sphere1", 16, 2, scene);
-    sphere.position.y = 20;
+    var sphere = BABYLON.Mesh.CreateSphere("sphere1", 16, 10, scene);
+    sphere.position.y = -4;
 
     // Add a landscape
     //const points:{x: Number; y: Number; z: number}[][] = [];
     const positions = new Array<number>();
     const indices = new Array<number>();
-    const size = 1500;
-    const noiseScale = size/.5;
+    const size = 500;
+    const noiseScale = size/8;
+    const indexShift = Math.floor(size/2);
+    let min = 1;
+    let max = 0;
+    let drop = 0.5;
+    let lowAltitude = 0.45;
     for(let z = 0; z< size; z++)
     {
         //const xArray = new Array<{x: Number; y: Number; z: number}>();
@@ -58,23 +66,30 @@ var createScene = async function () {
             const nx = x/noiseScale;
             const nz = z/noiseScale;
         
-            let noiseValue = noise.get(nx,0,nz);
-            for(let octave = 2; octave <= 32; octave *= 2)
-            {
-                noiseValue += noise.get(nx * octave,0, nz * octave) / octave;
+            let noiseValue = noise.get(nx,nz);
+
+            if(noiseValue < min) min = noiseValue;
+            if(noiseValue > max) max = noiseValue;
+
+            if(noiseValue < lowAltitude) {
+                const off = (lowAltitude - noiseValue);
+                noiseValue += off * .90;
             }
 
-            const y = 500 * noiseValue - 400;
+            noiseValue -= drop;
+
+            const y = 200 * noiseValue;
             //xArray.push({x,y,z})
-            positions.push(...[x-size/2,y,z-size/2]);
+            positions.push(...[x-indexShift,y,z-indexShift]);
             if(z < size-1 && x < size-1) {
                 const p = z * size + x;
                 // two triangles to represent this square in the grid
-                indices.push(...[p,p+1,p+size,  p+size, p+1, p+size+1]);
+                indices.push(...[ p,p+1,p+size ,  p+size, p+1, p+size+1]);
             }
         }
         //points.push(xArray);
     }
+    console.log( `${min} = ${max}`)
     var customMesh = new BABYLON.Mesh("custom", scene);
     // var positions = [-5, 2, -3, -7, -2, -3, -3, -2, -3, 5, 2, 3, 7, -2, 3, 3, -2, 3];
     // var indices = [0, 1, 2, 3, 4, 5];
@@ -83,6 +98,10 @@ var createScene = async function () {
     vertexData.positions = positions;
     vertexData.indices = indices;   
     vertexData.applyToMesh(customMesh);
+    var landscapeMaterial = new BABYLON.StandardMaterial("landscapeMaterial", scene);
+    landscapeMaterial.diffuseColor = new BABYLON.Color3(242/255,151/255,60/255);
+    landscapeMaterial.specularColor = new BABYLON.Color3(0,0,0);
+    customMesh.material = landscapeMaterial;
 
        
     const env = scene.createDefaultEnvironment();
@@ -92,6 +111,15 @@ var createScene = async function () {
         floorMeshes: [env.ground as AbstractMesh],
     });
 
+    window.addEventListener("wheel", event => {
+        const delta = new BABYLON.Vector3(0, 125, -150).scale(event.deltaY / 5000.0);
+        camera.position = camera.position.add(delta);
+        console.info(event.deltaY)
+    });
+
+    // Enable VR
+    var vrHelper = scene.createDefaultVRExperience();
+    vrHelper.enableInteractions();
     return scene;
 };
 

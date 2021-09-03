@@ -1,0 +1,14 @@
+<div style="font-family:sans-serif;">
+    <div style="color:red">Hi Allison</div>
+    <div id="fred">Bye</div>
+</div>
+<button onClick="doit()">Do the thing</button>
+<script>
+console.log("inside the script")
+function doit() {
+    console.log("Doing it")
+    const fredDiv = document.getElementById('fred')
+    fredDiv.innerText = "Not really " + Date.now()
+}
+
+</script>

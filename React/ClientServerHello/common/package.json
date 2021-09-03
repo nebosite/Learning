@@ -1,0 +1,19 @@
+{
+  "name": "hello-common",
+  "version": "0.0.0",
+  "description": "Shared code for both client and server",
+  "typings": "dist/main/index.d.ts",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json -w",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^14.0.6",
+    "typescript": "^3.9.5"
+  },
+  "dependencies": {}
+}
