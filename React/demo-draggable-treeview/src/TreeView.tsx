@@ -22,6 +22,9 @@ interface TreeViewProps {
     getItemType: (item: any) => string
 }
 
+// -----------------------------------------------------------------------------------------
+// ExpandableNode
+// -----------------------------------------------------------------------------------------
 class ExpandableNode {
     @observable expanded: boolean = false;  
     item: any
@@ -33,6 +36,9 @@ class ExpandableNode {
     get renderer() {return (item: any) => <div></div>}
     get getItemType() {return this.queryItem(this.item, this.itemType).getChildItemType}
 
+    // -----------------------------------------------------------------------------------------
+    // ctor
+    // -----------------------------------------------------------------------------------------
     constructor(
         item: any, 
         queryItem: (item: any, itemType: string) => TreeViewItemInfo,
@@ -44,17 +50,26 @@ class ExpandableNode {
         this.item = item; 
     }
 
+    // -----------------------------------------------------------------------------------------
+    // render
+    // -----------------------------------------------------------------------------------------
     render() {
         return this.queryItem(this.item, this.itemType).renderer(this.item);
     }
 }
 
+// -----------------------------------------------------------------------------------------
+// TreeView
+// -----------------------------------------------------------------------------------------
 @observer
 export default class TreeView 
     extends React.Component<TreeViewProps> {
 
     nodes = new Array<ExpandableNode>()
 
+    // -----------------------------------------------------------------------------------------
+    // ctor
+    // -----------------------------------------------------------------------------------------
     constructor(props: TreeViewProps) {
         super(props);
 
@@ -63,23 +78,28 @@ export default class TreeView
                 new ExpandableNode(item, this.props.itemQuery, this.props.getItemType(item))
             ))
     }
+    // -----------------------------------------------------------------------------------------
+    // renderChildren
+    // -----------------------------------------------------------------------------------------
+    renderChildren(node: ExpandableNode) {
+        const children = node.children;
+        if(!children) return null;
+        return <TreeView 
+            itemsSource={children}
+            itemQuery={node.queryItem}
+            getItemType={node.getItemType}
+        />
+    }
 
+    // -----------------------------------------------------------------------------------------
+    // renderNode
+    // -----------------------------------------------------------------------------------------
     renderNode(node: ExpandableNode) {
 
         const handleExpanderClick = (e: any) => {
             e.stopPropagation()
             console.log(`Click: ${node.expanded}`)
             node.expanded = !node.expanded;    
-        }
-
-        const renderChildren = () => {
-            const children = node.children;
-            if(!children) return null;
-            return <TreeView 
-                itemsSource={children}
-                itemQuery={node.queryItem}
-                getItemType={node.getItemType}
-            />
         }
 
         return <div>
@@ -100,12 +120,15 @@ export default class TreeView
 
             </Row>
             { node.expanded
-                ? <div  style={{marginLeft: "20px"}}>{renderChildren()}</div>
+                ? <div  style={{marginLeft: "20px"}}>{this.renderChildren(node)}</div>
                 : null
             }
         </div>
     }
 
+    // -----------------------------------------------------------------------------------------
+    // render
+    // -----------------------------------------------------------------------------------------
     render() {
         return <div>
             {
