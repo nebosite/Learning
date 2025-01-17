@@ -1,0 +1,25 @@
+<html>
+<div id="ttt" style="width: 100px; height: 100px"></div>
+</html>
+<script>
+window.addEventListener("gamepadconnected", function(e) {
+    var gp = navigator.getGamepads()[e.gamepad.index];
+    console.log("Gamepad connected at index %d: %s. %d buttons, %d axes.",
+    gp.index, gp.id,
+    gp.buttons.length, gp.axes.length);
+});
+
+const textOutput = document.getElementById("ttt")
+function pollGamepads() {
+    var gamepads = navigator.getGamepads ? navigator.getGamepads() : (navigator.webkitGetGamepads ? navigator.webkitGetGamepads : []);
+    for (var i = 0; i < gamepads.length; i++) {
+        var gp = gamepads[i];
+        if (gp) { textOutput.style.background = gp.buttons[0].pressed ? "red" : "white" }
+    }
+    requestAnimationFrame(pollGamepads)
+}
+
+pollGamepads();
+
+
+</script>
