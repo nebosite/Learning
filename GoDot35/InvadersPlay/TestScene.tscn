@@ -1,0 +1,42 @@
+[gd_scene load_steps=8 format=2]
+
+[ext_resource path="res://Assets/spritesheet_player.png" type="Texture" id=1]
+[ext_resource path="res://TestScene.cs" type="Script" id=2]
+[ext_resource path="res://Player/Player.cs" type="Script" id=3]
+
+[sub_resource type="AtlasTexture" id=1]
+flags = 4
+atlas = ExtResource( 1 )
+region = Rect2( 0, 0, 48, 58 )
+
+[sub_resource type="AtlasTexture" id=2]
+flags = 4
+atlas = ExtResource( 1 )
+region = Rect2( 48, 0, 48, 58 )
+
+[sub_resource type="AtlasTexture" id=3]
+flags = 4
+atlas = ExtResource( 1 )
+region = Rect2( 96, 0, 48, 58 )
+
+[sub_resource type="SpriteFrames" id=4]
+animations = [ {
+"frames": [ SubResource( 1 ), SubResource( 2 ), SubResource( 3 ) ],
+"loop": true,
+"name": "default",
+"speed": 5.0
+} ]
+
+[node name="TestScene" type="KinematicBody2D"]
+script = ExtResource( 2 )
+
+[node name="Player" type="KinematicBody2D" parent="."]
+script = ExtResource( 3 )
+
+[node name="ShipSprite" type="AnimatedSprite" parent="Player"]
+position = Vector2( 488, 216 )
+frames = SubResource( 4 )
+playing = true
+
+[node name="CollisionPolygon2D" type="CollisionPolygon2D" parent="Player"]
+polygon = PoolVector2Array( 488, 192, 480, 200, 480, 208, 464, 224, 464, 232, 512, 232, 512, 224, 496, 208, 496, 200 )
