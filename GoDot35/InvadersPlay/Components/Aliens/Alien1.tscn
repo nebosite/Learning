@@ -1,0 +1,11 @@
+[gd_scene load_steps=2 format=2]
+
+[ext_resource path="res://Assets/purple_03.png" type="Texture" id=1]
+
+[node name="Alien1" type="KinematicBody2D"]
+
+[node name="Sprite" type="Sprite" parent="."]
+texture = ExtResource( 1 )
+
+[node name="CollisionPolygon2D" type="CollisionPolygon2D" parent="."]
+polygon = PoolVector2Array( -8, -8, 8, -24, 16, 8, 24, 16, 16, 24, -16, 24, -24, 8, -16, 0 )

@@ -11,7 +11,7 @@ config_version=4
 [application]
 
 config/name="Invaders Play"
-run/main_scene="res://TestScene.tscn"
+run/main_scene="res://Pages/Earth.tscn"
 config/icon="res://icon.png"
 
 [display]
