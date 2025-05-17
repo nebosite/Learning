@@ -3,7 +3,9 @@ NOW
     [x] Draw a player object on the screen
     [x] Move the player with keyboard
     [x] Move the player with a controller
-    [ ] Spawn an alien
+    [x] Spawn an alien
+    [ ] Show FPS
+    [ ] Alien flies around
     [ ] Alien drops bullets
     [ ] Bullets can hit and damage player
     [ ] Show damage bar on the player

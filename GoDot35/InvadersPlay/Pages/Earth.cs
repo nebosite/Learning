@@ -6,15 +6,19 @@ public class Earth : KinematicBody2D
     private PackedScene playerSource;
     private PackedScene alienSource;
     private Timer _spawnTimer;
+    private Godot.Label FPSLabel;
+
     // Called when the node enters the scene tree for the first time.
     public override void _Ready()
     {
+
         _spawnTimer = new Timer();
         _spawnTimer.WaitTime = 2.0f;
         _spawnTimer.OneShot = false;
         _spawnTimer.Autostart = true;
         AddChild(_spawnTimer);
         _spawnTimer.Connect("timeout", this, nameof(OnSpawnTimeout));
+        FPSLabel = GetNode<Label>("FPSLabel");
 
         playerSource = GD.Load<PackedScene>("res://Components/Players/PlayerTypeA.tscn");
         var player = (KinematicBody2D)playerSource.Instance();
@@ -32,7 +36,7 @@ public class Earth : KinematicBody2D
     // Called every frame. 'delta' is the elapsed time since the previous frame.
     public override void _Process(float delta)
     {
-
+        FPSLabel.Text = "FPS: " + (1 / delta).ToString("F2");
     }
     
      private void SpawnAlien()
