@@ -18,6 +18,16 @@ const removeBodyButton = document.getElementById('removeBodyButton');
 const fpsValue = document.getElementById('fpsValue');
 const bodyCountDisplay = document.getElementById('bodyCountDisplay');
 const stepValue = document.getElementById('stepValue');
+const speedDisplay = document.getElementById('speedDisplay');
+const zoomDisplay = document.getElementById('zoomDisplay');
+
+
+// Physical constants (SI units: kg, m, s)
+const GRAV_CONSTANT = 6.674e-11; // m³/(kg·s²)
+const SOLAR_MASS_KG = 1.989e30; // kg
+const AU_METERS = 1.496e11; // meters
+const SECONDS_PER_DAY = 86400; // seconds
+const SECONDS_PER_YEAR = 365.25 * SECONDS_PER_DAY; // seconds
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
 renderer.setPixelRatio(window.devicePixelRatio);
@@ -26,14 +36,14 @@ renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x070a14);
 
-const camera = new THREE.PerspectiveCamera(55, canvas.clientWidth / canvas.clientHeight, 0.1, 2000);
-camera.position.set(0, 100, 300);
+const camera = new THREE.PerspectiveCamera(55, canvas.clientWidth / canvas.clientHeight, 1e8, 1e14);
+camera.position.set(0, AU_METERS * 50, AU_METERS * 150);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
-controls.minDistance = 50;
-controls.maxDistance = 800;
+controls.minDistance = 1e8; // ~0.67 AU in meters
+controls.maxDistance = Infinity; // No upper limit
 
 const ambientLight = new THREE.AmbientLight(0xdbeeff, 0.45);
 scene.add(ambientLight);
@@ -59,9 +69,10 @@ world.addEventListener('beginContact', (event) => {
 });
 
 const bodies = [];
-const PHYSICS_G = 1e4;
-const fixedTimeStep = 1 / 60;
+const fixedTimeStep = 1 / 60; // seconds per physics frame
 let lastTimestamp = 0;
+let accumulatedRealTime = 0; // real seconds
+let simulationTime = 0; // simulated seconds
 let paused = false;
 let stepCount = 0;
 let fps = 0;
@@ -81,15 +92,15 @@ function randomColor() {
   return new THREE.Color(`hsl(${Math.round(randomBetween(180, 340))}, 82%, 64%)`);
 }
 
-function createAstronomicalBody(position, velocity, mass, type) {
-  const density = type === 'star' ? 1.4 : type === 'planet' ? 5.5 : 0.6; // g/cm³ approximate
-  const volume = mass / density;
-  const radius = Math.cbrt(volume * 3 / (4 * Math.PI)) * 0.1; // scaled for visibility
-  const shape = new CANNON.Sphere(Math.max(radius, 0.5));
-  const physicsBody = new CANNON.Body({ mass, shape });
+function createAstronomicalBody(position, velocity, massKg, type) {
+  const density = type === 'star' ? 1408 : type === 'planet' ? 5514 : 600; // kg/m³
+  const volume = massKg / density;
+  const radius = Math.cbrt(volume * 3 / (4 * Math.PI));
+  const shape = new CANNON.Sphere(Math.max(radius, 1e6));
+  const physicsBody = new CANNON.Body({ mass: massKg, shape });
   physicsBody.position.set(position.x, position.y, position.z);
   physicsBody.velocity.set(velocity.x, velocity.y, velocity.z);
-  physicsBody.linearDamping = 0.01;
+  physicsBody.linearDamping = 0.001;
   world.addBody(physicsBody);
 
   const color = type === 'star' ? new THREE.Color(0xffd700) : type === 'planet' ? new THREE.Color(0x4a90e2) : new THREE.Color(0x8b4513);
@@ -112,7 +123,7 @@ function createAstronomicalBody(position, velocity, mass, type) {
   return {
     body: physicsBody,
     mesh,
-    mass,
+    mass: massKg,
     radius,
     color,
     type,
@@ -153,8 +164,10 @@ function mergeBodies(itemA, itemB) {
   // Update larger body
   larger.mass = newMass;
   larger.body.mass = newMass;
-  const newRadius = Math.cbrt(newMass / (larger.type === 'star' ? 1.4 : larger.type === 'planet' ? 5.5 : 0.6) * 3 / (4 * Math.PI)) * 0.1;
-  larger.radius = Math.max(newRadius, 0.5);
+  const density = larger.type === 'star' ? 1408 : larger.type === 'planet' ? 5514 : 600;
+  const volume = newMass / density;
+  const newRadius = Math.cbrt(volume * 3 / (4 * Math.PI));
+  larger.radius = Math.max(newRadius, 1e6);
   larger.body.shapes[0].radius = larger.radius;
   larger.mesh.geometry = new THREE.SphereGeometry(larger.radius, 16, 12);
   larger.body.position.copy(newPos);
@@ -185,38 +198,47 @@ function removeAllBodies() {
 
 function spawnSolarSystem() {
   removeAllBodies();
-  const starMass = parseFloat(starMassRange.value) * 1000; // in simulation units
+  const starMassSolar = parseFloat(starMassRange.value);
+  const starMassKg = starMassSolar * SOLAR_MASS_KG;
   const totalBodies = parseInt(bodyCountRange.value, 10);
 
   // Create star at center
-  const star = createAstronomicalBody(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0), starMass, 'star');
+  const star = createAstronomicalBody(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0), starMassKg, 'star');
   bodies.push(star);
 
   // Create planets (about 20% of bodies)
   const numPlanets = Math.max(1, Math.floor(totalBodies * 0.2));
   for (let i = 0; i < numPlanets; i += 1) {
-    const distance = randomBetween(20, 80);
+    const distanceAU = randomBetween(0.5, 5);
+    const distanceM = distanceAU * AU_METERS;
     const angle = randomBetween(0, Math.PI * 2);
-    const height = randomBetween(-5, 5);
-    const position = new THREE.Vector3(Math.cos(angle) * distance, height, Math.sin(angle) * distance);
-    const orbitalSpeed = Math.sqrt(PHYSICS_G * starMass / distance);
+    const height = randomBetween(-0.1 * distanceM, 0.1 * distanceM);
+    const position = new THREE.Vector3(Math.cos(angle) * distanceM, height, Math.sin(angle) * distanceM);
+    
+    // Orbital velocity: v = sqrt(G * M / r)
+    const orbitalSpeed = Math.sqrt(GRAV_CONSTANT * starMassKg / distanceM);
     const velocity = new THREE.Vector3(-Math.sin(angle) * orbitalSpeed, 0, Math.cos(angle) * orbitalSpeed);
-    const mass = randomBetween(1, 10);
-    const planet = createAstronomicalBody(position, velocity, mass, 'planet');
+    
+    // Planet mass: 0.3 to 3 Earth masses
+    const planetMassKg = randomBetween(0.3, 3) * 5.972e24; // Earth mass
+    const planet = createAstronomicalBody(position, velocity, planetMassKg, 'planet');
     bodies.push(planet);
   }
 
   // Create comets (rest of bodies)
   const numComets = totalBodies - 1 - numPlanets;
   for (let i = 0; i < numComets; i += 1) {
-    const position = new THREE.Vector3(randomBetween(-150, 150), randomBetween(-50, 50), randomBetween(-150, 150));
-    const velocity = new THREE.Vector3(randomBetween(-2, 2), randomBetween(-2, 2), randomBetween(-2, 2));
-    const mass = randomBetween(0.01, 0.1);
-    const comet = createAstronomicalBody(position, velocity, mass, 'comet');
+    const positionAU = [randomBetween(-30, 30), randomBetween(-10, 10), randomBetween(-30, 30)];
+    const position = new THREE.Vector3(positionAU[0] * AU_METERS, positionAU[1] * AU_METERS, positionAU[2] * AU_METERS);
+    const velocityMs = [randomBetween(-1e4, 1e4), randomBetween(-1e4, 1e4), randomBetween(-1e4, 1e4)];
+    const velocity = new THREE.Vector3(velocityMs[0], velocityMs[1], velocityMs[2]);
+    const cometMassKg = randomBetween(1e20, 1e21); // Small asteroids
+    const comet = createAstronomicalBody(position, velocity, cometMassKg, 'comet');
     bodies.push(comet);
   }
 
   stepCount = 0;
+  simulationTime = 0;
   updateStats();
 }
 
@@ -230,9 +252,9 @@ function applyGravitationalForces() {
       const posB = itemB.body.position;
       const diff = new CANNON.Vec3();
       posB.vsub(posA, diff);
-      const distSq = Math.max(diff.lengthSquared(), 2.5);
+      const distSq = Math.max(diff.lengthSquared(), 1e12); // Minimum distance to avoid singularity
       const dist = Math.sqrt(distSq);
-      const forceMag = (PHYSICS_G * itemA.mass * itemB.mass) / distSq;
+      const forceMag = (GRAV_CONSTANT * itemA.mass * itemB.mass) / distSq;
       diff.scale(forceMag / dist, diff);
       itemA.body.applyForce(diff, posA);
       itemB.body.applyForce(diff.negate(new CANNON.Vec3()), posB);
@@ -293,6 +315,23 @@ function updateStats() {
   stepValue.textContent = stepCount.toString();
 }
 
+function updateZoomAndSpeed() {
+  // Calculate view width in AU based on camera distance
+  const cameraDistance = camera.position.length();
+  const fovRad = camera.fov * Math.PI / 180;
+  const viewHeight = 2 * cameraDistance * Math.tan(fovRad / 2);
+  const aspectRatio = canvas.clientWidth / canvas.clientHeight;
+  const viewWidth = viewHeight * aspectRatio;
+  const viewWidthAU = viewWidth / AU_METERS;
+  zoomDisplay.textContent = viewWidthAU.toFixed(2);
+
+  // Calculate simulation speed in days per second
+  if (accumulatedRealTime > 0) {
+    const daysPerSecond = simulationTime / SECONDS_PER_DAY / accumulatedRealTime;
+    speedDisplay.textContent = daysPerSecond.toFixed(4);
+  }
+}
+
 function updateUI() {
   starMassValue.textContent = `${parseFloat(starMassRange.value).toFixed(1)}`;
   speedValue.textContent = `${parseFloat(speedRange.value).toFixed(1)}x`;
@@ -306,9 +345,10 @@ function addBodyAtPointer(event) {
   raycaster.setFromCamera({ x, y }, camera);
   raycaster.ray.intersectPlane(clickPlane, clickPoint);
   const position = clickPoint.clone();
-  const velocity = new THREE.Vector3(randomBetween(-3, 3), randomBetween(-3, 3), randomBetween(-3, 3));
-  const mass = randomBetween(0.01, 0.1);
-  bodies.push(createAstronomicalBody(position, velocity, mass, 'comet'));
+  const velocityMs = [randomBetween(-1e4, 1e4), randomBetween(-1e4, 1e4), randomBetween(-1e4, 1e4)];
+  const velocity = new THREE.Vector3(velocityMs[0], velocityMs[1], velocityMs[2]);
+  const cometMassKg = randomBetween(1e20, 1e21);
+  bodies.push(createAstronomicalBody(position, velocity, cometMassKg, 'comet'));
   updateStats();
 }
 
@@ -322,8 +362,12 @@ function animate(timestamp) {
 
   if (!paused) {
     stepCount += 1;
+    const speedFactor = parseFloat(speedRange.value);
+    const physicsTimeStep = fixedTimeStep * speedFactor;
+    simulationTime += physicsTimeStep;
+    accumulatedRealTime += deltaSeconds;
     applyGravitationalForces();
-    world.step(fixedTimeStep * parseFloat(speedRange.value), deltaSeconds, 4);
+    world.step(physicsTimeStep, deltaSeconds, 4);
     // Process deferred merges after physics step
     while (pendingMerges.length > 0) {
       const merge = pendingMerges.shift();
@@ -339,6 +383,7 @@ function animate(timestamp) {
     fpsFrameCount = 0;
     fpsTimer = 0;
     updateStats();
+    updateZoomAndSpeed();
   }
 
   renderScene();
@@ -372,10 +417,12 @@ resetButton.addEventListener('click', () => {
 });
 
 addBodyButton.addEventListener('click', () => {
-  const position = new THREE.Vector3(randomBetween(-100, 100), randomBetween(-50, 50), randomBetween(-100, 100));
-  const velocity = new THREE.Vector3(randomBetween(-3, 3), randomBetween(-3, 3), randomBetween(-3, 3));
-  const mass = randomBetween(0.01, 0.1);
-  bodies.push(createAstronomicalBody(position, velocity, mass, 'comet'));
+  const positionAU = [randomBetween(-30, 30), randomBetween(-10, 10), randomBetween(-30, 30)];
+  const position = new THREE.Vector3(positionAU[0] * AU_METERS, positionAU[1] * AU_METERS, positionAU[2] * AU_METERS);
+  const velocityMs = [randomBetween(-1e4, 1e4), randomBetween(-1e4, 1e4), randomBetween(-1e4, 1e4)];
+  const velocity = new THREE.Vector3(velocityMs[0], velocityMs[1], velocityMs[2]);
+  const cometMassKg = randomBetween(1e20, 1e21);
+  bodies.push(createAstronomicalBody(position, velocity, cometMassKg, 'comet'));
   updateStats();
 });
 
