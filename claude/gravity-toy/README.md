@@ -11,8 +11,16 @@ A browser-based n-body gravity simulator with real-time controls.
 
 ## Run locally
 
-1. Open `index.html` in your browser.
-2. Use the control panel on the right to adjust simulation settings.
+1. It is best to serve the files from a local HTTP server because the simulation loads ES modules.
+2. Open `index.html` in your browser or run a simple server from this directory.
+
+Example using Python:
+
+```bash
+python -m http.server 8000
+```
+
+Then visit `http://localhost:8000`.
 
 ## Files
 

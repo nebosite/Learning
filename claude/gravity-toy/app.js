@@ -1,6 +1,8 @@
-const canvas = document.getElementById('gravityCanvas');
-const ctx = canvas.getContext('2d');
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js';
+import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.157.0/examples/jsm/controls/OrbitControls.js';
+import * as CANNON from 'https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js';
 
+const canvas = document.getElementById('gravityCanvas');
 const speedRange = document.getElementById('speedRange');
 const speedValue = document.getElementById('speedValue');
 const bodyCountRange = document.getElementById('bodyCountRange');
@@ -17,52 +19,182 @@ const fpsValue = document.getElementById('fpsValue');
 const bodyCountDisplay = document.getElementById('bodyCountDisplay');
 const stepValue = document.getElementById('stepValue');
 
-const G = 200;
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x070a14);
+
+const camera = new THREE.PerspectiveCamera(55, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
+camera.position.set(0, 40, 110);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 30;
+controls.maxDistance = 240;
+
+const ambientLight = new THREE.AmbientLight(0xdbeeff, 0.45);
+scene.add(ambientLight);
+
+const directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
+directionalLight.position.set(30, 50, 20);
+scene.add(directionalLight);
+
+const world = new CANNON.World();
+world.gravity.set(0, 0, 0);
+world.broadphase = new CANNON.NaiveBroadphase();
+world.solver.iterations = 12;
+
 const bodies = [];
+const PHYSICS_G = 1.4e4;
+const fixedTimeStep = 1 / 60;
 let lastTimestamp = 0;
-let accumulatedTime = 0;
 let paused = false;
 let stepCount = 0;
 let fps = 0;
 let fpsFrameCount = 0;
 let fpsTimer = 0;
-let activeDrag = null;
-let pointerOffset = { x: 0, y: 0 };
 
-function resizeCanvas() {
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = Math.floor(rect.width * window.devicePixelRatio);
-  canvas.height = Math.floor(rect.height * window.devicePixelRatio);
-  ctx.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
-}
+const raycaster = new THREE.Raycaster();
+const clickPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+const clickPoint = new THREE.Vector3();
 
-function random(min, max) {
+function randomBetween(min, max) {
   return Math.random() * (max - min) + min;
 }
 
-function createBody(x, y, massScale = 1) {
-  const mass = random(4, 14) * massScale;
-  const radius = Math.max(3, Math.min(18, mass));
+function randomColor() {
+  return new THREE.Color(`hsl(${Math.round(randomBetween(180, 340))}, 82%, 64%)`);
+}
+
+function createBody(position, velocity, massScale = 1) {
+  const mass = randomBetween(0.9, 2.8) * massScale;
+  const radius = THREE.MathUtils.clamp(mass * 1.8, 1.8, 5.2);
+  const shape = new CANNON.Sphere(radius);
+  const physicsBody = new CANNON.Body({ mass, shape });
+  physicsBody.position.set(position.x, position.y, position.z);
+  physicsBody.velocity.set(velocity.x, velocity.y, velocity.z);
+  physicsBody.linearDamping = 0.02;
+  world.addBody(physicsBody);
+
+  const color = randomColor();
+  const material = new THREE.MeshStandardMaterial({ color, roughness: 0.3, metalness: 0.2 });
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 24, 20), material);
+  mesh.position.copy(position);
+  scene.add(mesh);
+
+  const trailGeometry = new THREE.BufferGeometry();
+  const trailLine = new THREE.Line(trailGeometry, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.28 }));
+  trailLine.frustumCulled = false;
+  scene.add(trailLine);
+
+  const velocityGeometry = new THREE.BufferGeometry();
+  velocityGeometry.setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+  const velocityLine = new THREE.Line(velocityGeometry, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.75 }));
+  velocityLine.frustumCulled = false;
+  scene.add(velocityLine);
+
   return {
-    x,
-    y,
-    vx: random(-20, 20),
-    vy: random(-20, 20),
+    body: physicsBody,
+    mesh,
     mass,
     radius,
-    color: `hsl(${Math.round(random(180, 320))}, 85%, 60%)`,
+    color,
     trail: [],
+    trailLine,
+    velocityLine,
   };
 }
 
-function resetSimulation() {
+function removeAllBodies() {
+  bodies.forEach((item) => {
+    world.removeBody(item.body);
+    scene.remove(item.mesh);
+    scene.remove(item.trailLine);
+    scene.remove(item.velocityLine);
+  });
   bodies.length = 0;
-  const defaultCount = parseInt(bodyCountRange.value, 10);
-  for (let i = 0; i < defaultCount; i += 1) {
-    bodies.push(createBody(random(100, canvas.width / window.devicePixelRatio - 100), random(100, canvas.height / window.devicePixelRatio - 100), parseFloat(massScaleRange.value)));
+}
+
+function spawnBodies(count) {
+  removeAllBodies();
+  const massScale = parseFloat(massScaleRange.value);
+  for (let i = 0; i < count; i += 1) {
+    const position = new THREE.Vector3(randomBetween(-36, 36), randomBetween(-28, 28), randomBetween(-24, 24));
+    const velocity = new THREE.Vector3(randomBetween(-9, 9), randomBetween(-9, 9), randomBetween(-9, 9));
+    bodies.push(createBody(position, velocity, massScale));
   }
   stepCount = 0;
   updateStats();
+}
+
+function applyGravitationalForces() {
+  const n = bodies.length;
+  for (let i = 0; i < n; i += 1) {
+    for (let j = i + 1; j < n; j += 1) {
+      const itemA = bodies[i];
+      const itemB = bodies[j];
+      const posA = itemA.body.position;
+      const posB = itemB.body.position;
+      const diff = new CANNON.Vec3();
+      posB.vsub(posA, diff);
+      const distSq = Math.max(diff.lengthSquared(), 2.5);
+      const dist = Math.sqrt(distSq);
+      const forceMag = (PHYSICS_G * itemA.mass * itemB.mass) / distSq;
+      diff.scale(forceMag / dist, diff);
+      itemA.body.applyForce(diff, posA);
+      itemB.body.applyForce(diff.negate(new CANNON.Vec3()), posB);
+    }
+  }
+}
+
+function updateBodyMeshes() {
+  bodies.forEach((item) => {
+    const position = item.body.position;
+    item.mesh.position.set(position.x, position.y, position.z);
+
+    if (trailToggle.checked) {
+      item.trail.push(new THREE.Vector3(position.x, position.y, position.z));
+      if (item.trail.length > 45) {
+        item.trail.shift();
+      }
+      if (item.trail.length > 1) {
+        item.trailLine.geometry.setFromPoints(item.trail);
+        item.trailLine.visible = true;
+      }
+    } else {
+      item.trail.length = 0;
+      item.trailLine.visible = false;
+    }
+
+    if (velocityToggle.checked) {
+      const velocity = item.body.velocity;
+      const start = new THREE.Vector3(position.x, position.y, position.z);
+      const end = new THREE.Vector3(position.x + velocity.x * 0.55, position.y + velocity.y * 0.55, position.z + velocity.z * 0.55);
+      item.velocityLine.geometry.setFromPoints([start, end]);
+      item.velocityLine.visible = true;
+    } else {
+      item.velocityLine.visible = false;
+    }
+  });
+}
+
+function resizeRenderer() {
+  const width = canvas.clientWidth;
+  const height = canvas.clientHeight;
+  if (canvas.width !== width * window.devicePixelRatio || canvas.height !== height * window.devicePixelRatio) {
+    renderer.setSize(width, height, false);
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+  }
+}
+
+function renderScene() {
+  resizeRenderer();
+  controls.update();
+  renderer.render(scene, camera);
 }
 
 function updateStats() {
@@ -71,105 +203,22 @@ function updateStats() {
   stepValue.textContent = stepCount.toString();
 }
 
-function getBodyAt(x, y) {
-  for (let i = bodies.length - 1; i >= 0; i -= 1) {
-    const body = bodies[i];
-    const dx = x - body.x;
-    const dy = y - body.y;
-    if (Math.hypot(dx, dy) < body.radius + 5) {
-      return body;
-    }
-  }
-  return null;
-}
-
-function simulateStep(delta) {
-  const dt = delta * parseFloat(speedRange.value);
-  const massScale = parseFloat(massScaleRange.value);
-
-  for (let i = 0; i < bodies.length; i += 1) {
-    const bodyA = bodies[i];
-    let ax = 0;
-    let ay = 0;
-
-    for (let j = 0; j < bodies.length; j += 1) {
-      if (i === j) continue;
-      const bodyB = bodies[j];
-      const dx = bodyB.x - bodyA.x;
-      const dy = bodyB.y - bodyA.y;
-      const distSq = Math.max(dx * dx + dy * dy, 25);
-      const dist = Math.sqrt(distSq);
-      const force = (G * bodyA.mass * bodyB.mass * massScale) / distSq;
-      ax += (force / bodyA.mass) * (dx / dist);
-      ay += (force / bodyA.mass) * (dy / dist);
-    }
-
-    bodyA.vx += ax * dt * 0.001;
-    bodyA.vy += ay * dt * 0.001;
-  }
-
-  for (const body of bodies) {
-    body.x += body.vx * dt * 0.05;
-    body.y += body.vy * dt * 0.05;
-
-    if (trailToggle.checked) {
-      body.trail.push({ x: body.x, y: body.y });
-      if (body.trail.length > 40) {
-        body.trail.shift();
-      }
-    } else {
-      body.trail.length = 0;
-    }
-
-    if (body.x < -50) body.x = canvas.width / window.devicePixelRatio + 50;
-    if (body.x > canvas.width / window.devicePixelRatio + 50) body.x = -50;
-    if (body.y < -50) body.y = canvas.height / window.devicePixelRatio + 50;
-    if (body.y > canvas.height / window.devicePixelRatio + 50) body.y = -50;
-  }
-
-  stepCount += 1;
-}
-
-function renderFrame() {
-  const width = canvas.width / window.devicePixelRatio;
-  const height = canvas.height / window.devicePixelRatio;
-  ctx.clearRect(0, 0, width, height);
-
-  if (trailToggle.checked) {
-    ctx.lineWidth = 1;
-    for (const body of bodies) {
-      if (body.trail.length < 2) continue;
-      ctx.strokeStyle = `${body.color}33`;
-      ctx.beginPath();
-      ctx.moveTo(body.trail[0].x, body.trail[0].y);
-      for (let i = 1; i < body.trail.length; i += 1) {
-        ctx.lineTo(body.trail[i].x, body.trail[i].y);
-      }
-      ctx.stroke();
-    }
-  }
-
-  for (const body of bodies) {
-    ctx.fillStyle = body.color;
-    ctx.beginPath();
-    ctx.arc(body.x, body.y, body.radius, 0, Math.PI * 2);
-    ctx.fill();
-
-    if (velocityToggle.checked) {
-      ctx.strokeStyle = '#ffffffaa';
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.moveTo(body.x, body.y);
-      ctx.lineTo(body.x + body.vx * 0.5, body.y + body.vy * 0.5);
-      ctx.stroke();
-    }
-  }
-}
-
 function updateUI() {
   speedValue.textContent = `${parseFloat(speedRange.value).toFixed(1)}x`;
   bodyCountValue.textContent = bodyCountRange.value;
   massScaleValue.textContent = `${parseFloat(massScaleRange.value).toFixed(1)}x`;
+}
+
+function addBodyAtPointer(event) {
+  const rect = canvas.getBoundingClientRect();
+  const x = (event.clientX - rect.left) / rect.width * 2 - 1;
+  const y = -(event.clientY - rect.top) / rect.height * 2 + 1;
+  raycaster.setFromCamera({ x, y }, camera);
+  raycaster.ray.intersectPlane(clickPlane, clickPoint);
+  const position = clickPoint.clone();
+  const velocity = new THREE.Vector3(randomBetween(-4, 4), randomBetween(-4, 4), randomBetween(-4, 4));
+  bodies.push(createBody(position, velocity, parseFloat(massScaleRange.value)));
+  updateStats();
 }
 
 function animate(timestamp) {
@@ -177,74 +226,43 @@ function animate(timestamp) {
     lastTimestamp = timestamp;
   }
 
-  const delta = timestamp - lastTimestamp;
+  const deltaSeconds = Math.min((timestamp - lastTimestamp) / 1000, 0.033);
   lastTimestamp = timestamp;
 
   if (!paused) {
-    accumulatedTime += delta;
-    const stepTime = 16.7;
-    while (accumulatedTime >= stepTime) {
-      simulateStep(stepTime);
-      accumulatedTime -= stepTime;
-    }
-    renderFrame();
+    stepCount += 1;
+    applyGravitationalForces();
+    world.step(fixedTimeStep * parseFloat(speedRange.value), deltaSeconds, 4);
+    updateBodyMeshes();
   }
 
   fpsFrameCount += 1;
-  fpsTimer += delta;
-  if (fpsTimer >= 500) {
-    fps = (fpsFrameCount / fpsTimer) * 1000;
+  fpsTimer += deltaSeconds;
+  if (fpsTimer >= 0.5) {
+    fps = fpsFrameCount / fpsTimer;
     fpsFrameCount = 0;
     fpsTimer = 0;
     updateStats();
   }
 
+  renderScene();
   requestAnimationFrame(animate);
-}
-
-function onPointerDown(event) {
-  const rect = canvas.getBoundingClientRect();
-  const x = (event.clientX - rect.left);
-  const y = (event.clientY - rect.top);
-  const body = getBodyAt(x, y);
-
-  if (body) {
-    activeDrag = body;
-    pointerOffset.x = body.x - x;
-    pointerOffset.y = body.y - y;
-  } else {
-    bodies.push(createBody(x, y, parseFloat(massScaleRange.value)));
-    updateStats();
-  }
-}
-
-function onPointerMove(event) {
-  if (!activeDrag) return;
-  const rect = canvas.getBoundingClientRect();
-  const x = (event.clientX - rect.left);
-  const y = (event.clientY - rect.top);
-  activeDrag.x = x + pointerOffset.x;
-  activeDrag.y = y + pointerOffset.y;
-}
-
-function onPointerUp() {
-  activeDrag = null;
 }
 
 speedRange.addEventListener('input', updateUI);
 bodyCountRange.addEventListener('input', () => {
   updateUI();
-  bodyCountDisplay.textContent = bodyCountRange.value;
+  updateStats();
 });
 massScaleRange.addEventListener('input', updateUI);
 trailToggle.addEventListener('change', () => {
   if (!trailToggle.checked) {
-    for (const body of bodies) {
-      body.trail.length = 0;
-    }
+    bodies.forEach((item) => {
+      item.trail.length = 0;
+      item.trailLine.visible = false;
+    });
   }
 });
-velocityToggle.addEventListener('change', renderFrame);
 
 pauseButton.addEventListener('click', () => {
   paused = !paused;
@@ -252,31 +270,40 @@ pauseButton.addEventListener('click', () => {
 });
 
 resetButton.addEventListener('click', () => {
-  resetSimulation();
+  spawnBodies(parseInt(bodyCountRange.value, 10));
 });
 
 addBodyButton.addEventListener('click', () => {
-  bodies.push(createBody(canvas.width / window.devicePixelRatio / 2, canvas.height / window.devicePixelRatio / 2, parseFloat(massScaleRange.value)));
+  const position = new THREE.Vector3(randomBetween(-18, 18), randomBetween(-18, 18), randomBetween(-18, 18));
+  const velocity = new THREE.Vector3(randomBetween(-5, 5), randomBetween(-5, 5), randomBetween(-5, 5));
+  bodies.push(createBody(position, velocity, parseFloat(massScaleRange.value)));
   updateStats();
 });
 
 removeBodyButton.addEventListener('click', () => {
-  bodies.pop();
+  const item = bodies.pop();
+  if (item) {
+    world.removeBody(item.body);
+    scene.remove(item.mesh);
+    scene.remove(item.trailLine);
+    scene.remove(item.velocityLine);
+  }
   updateStats();
 });
 
-canvas.addEventListener('pointerdown', onPointerDown);
-window.addEventListener('pointermove', onPointerMove);
-window.addEventListener('pointerup', onPointerUp);
+canvas.addEventListener('click', (event) => {
+  if (event.target === canvas) {
+    addBodyAtPointer(event);
+  }
+});
+
 window.addEventListener('resize', () => {
-  resizeCanvas();
-  renderFrame();
+  resizeRenderer();
 });
 
 function init() {
-  resizeCanvas();
   updateUI();
-  resetSimulation();
+  spawnBodies(parseInt(bodyCountRange.value, 10));
   requestAnimationFrame(animate);
 }
 
