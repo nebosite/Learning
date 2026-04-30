@@ -36,14 +36,16 @@ renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x070a14);
 
-const camera = new THREE.PerspectiveCamera(55, canvas.clientWidth / canvas.clientHeight, 1e8, 1e14);
-camera.position.set(0, AU_METERS * 50, AU_METERS * 150);
+const camera = new THREE.PerspectiveCamera(55, canvas.clientWidth / canvas.clientHeight, 0.001, 1000); // Near/far in AU
+camera.position.set(0, 2, 10); // Position in AU
+camera.lookAt(0, 0, 0);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
-controls.minDistance = 1e8; // ~0.67 AU in meters
-controls.maxDistance = Infinity; // No upper limit
+controls.minDistance = 0.01; // Minimum zoom in AU
+controls.maxDistance = 1000; // Maximum zoom in AU
+controls.target.set(0, 0, 0);
 
 const ambientLight = new THREE.AmbientLight(0xdbeeff, 0.45);
 scene.add(ambientLight);
@@ -103,10 +105,13 @@ function createAstronomicalBody(position, velocity, massKg, type) {
   physicsBody.linearDamping = 0.001;
   world.addBody(physicsBody);
 
+  // Create mesh with AU-scale radius (minimum 1 AU for visibility)
+  const radiusAU = Math.max(radius / AU_METERS, 1.0);
   const color = type === 'star' ? new THREE.Color(0xffd700) : type === 'planet' ? new THREE.Color(0x4a90e2) : new THREE.Color(0x8b4513);
   const material = new THREE.MeshStandardMaterial({ color, roughness: 0.8, metalness: 0.1 });
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 16, 12), material);
-  mesh.position.copy(position);
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(radiusAU, 16, 12), material);
+  // Position will be set in updateBodyMeshes
+  mesh.position.set(0, 0, 0);
   scene.add(mesh);
 
   const trailGeometry = new THREE.BufferGeometry();
@@ -169,10 +174,14 @@ function mergeBodies(itemA, itemB) {
   const newRadius = Math.cbrt(volume * 3 / (4 * Math.PI));
   larger.radius = Math.max(newRadius, 1e6);
   larger.body.shapes[0].radius = larger.radius;
-  larger.mesh.geometry = new THREE.SphereGeometry(larger.radius, 16, 12);
+
+  // Update mesh geometry to new AU-scale radius
+  const newRadiusAU = Math.max(newRadius / AU_METERS, 1.0);
+  larger.mesh.geometry = new THREE.SphereGeometry(newRadiusAU, 16, 12);
+
   larger.body.position.copy(newPos);
   larger.body.velocity.copy(newVel);
-  larger.mesh.position.copy(newPos);
+  // Position will be updated in updateBodyMeshes
 
   // Clear trails
   larger.trail.length = 0;
@@ -265,10 +274,26 @@ function applyGravitationalForces() {
 function updateBodyMeshes() {
   bodies.forEach((item) => {
     const position = item.body.position;
-    item.mesh.position.set(position.x, position.y, position.z);
+    // Convert position from meters to AU for rendering
+    const positionAU = new THREE.Vector3(
+      position.x / AU_METERS,
+      position.y / AU_METERS,
+      position.z / AU_METERS
+    );
+    item.mesh.position.copy(positionAU);
+
+    // Convert radius from meters to AU with minimum size of 1 AU
+    const radiusAU = Math.max(item.radius / AU_METERS, 1.0);
+    item.mesh.scale.setScalar(radiusAU);
 
     if (trailToggle.checked) {
-      item.trail.push(new THREE.Vector3(position.x, position.y, position.z));
+      // Convert trail positions to AU
+      const trailPointAU = new THREE.Vector3(
+        position.x / AU_METERS,
+        position.y / AU_METERS,
+        position.z / AU_METERS
+      );
+      item.trail.push(trailPointAU);
       if (item.trail.length > 45) {
         item.trail.shift();
       }
@@ -283,8 +308,14 @@ function updateBodyMeshes() {
 
     if (velocityToggle.checked) {
       const velocity = item.body.velocity;
-      const start = new THREE.Vector3(position.x, position.y, position.z);
-      const end = new THREE.Vector3(position.x + velocity.x * 0.55, position.y + velocity.y * 0.55, position.z + velocity.z * 0.55);
+      const start = new THREE.Vector3(position.x / AU_METERS, position.y / AU_METERS, position.z / AU_METERS);
+      // Scale velocity vector for visibility (convert to AU/day for display)
+      const velocityScale = 86400 / AU_METERS; // Convert m/s to AU/day
+      const end = new THREE.Vector3(
+        start.x + velocity.x * velocityScale,
+        start.y + velocity.y * velocityScale,
+        start.z + velocity.z * velocityScale
+      );
       item.velocityLine.geometry.setFromPoints([start, end]);
       item.velocityLine.visible = true;
     } else {
@@ -306,6 +337,7 @@ function resizeRenderer() {
 function renderScene() {
   resizeRenderer();
   controls.update();
+  renderer.clear();
   renderer.render(scene, camera);
 }
 
@@ -317,13 +349,12 @@ function updateStats() {
 
 function updateZoomAndSpeed() {
   // Calculate view width in AU based on camera distance
-  const cameraDistance = camera.position.length();
+  const cameraDistance = camera.position.length(); // Already in AU
   const fovRad = camera.fov * Math.PI / 180;
   const viewHeight = 2 * cameraDistance * Math.tan(fovRad / 2);
   const aspectRatio = canvas.clientWidth / canvas.clientHeight;
   const viewWidth = viewHeight * aspectRatio;
-  const viewWidthAU = viewWidth / AU_METERS;
-  zoomDisplay.textContent = viewWidthAU.toFixed(2);
+  zoomDisplay.textContent = viewWidth.toFixed(2);
 
   // Calculate simulation speed in days per second
   if (accumulatedRealTime > 0) {
@@ -414,6 +445,10 @@ pauseButton.addEventListener('click', () => {
 
 resetButton.addEventListener('click', () => {
   spawnSolarSystem();
+  // Reset camera to good viewing position in AU
+  camera.position.set(0, 2, 10);
+  controls.target.set(0, 0, 0);
+  controls.update();
 });
 
 addBodyButton.addEventListener('click', () => {
