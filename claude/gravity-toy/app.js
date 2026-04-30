@@ -28,6 +28,7 @@ const SOLAR_MASS_KG = 1.989e30; // kg
 const AU_METERS = 1.496e11; // meters
 const SECONDS_PER_DAY = 86400; // seconds
 const SECONDS_PER_YEAR = 365.25 * SECONDS_PER_DAY; // seconds
+const minVisualRadiusAU = 0.5; // Minimum radius in AU for visibility
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
 renderer.setPixelRatio(window.devicePixelRatio);
@@ -105,8 +106,8 @@ function createAstronomicalBody(position, velocity, massKg, type) {
   physicsBody.linearDamping = 0.001;
   world.addBody(physicsBody);
 
-  // Create mesh with AU-scale radius (minimum 1 AU for visibility)
-  const radiusAU = Math.max(radius / AU_METERS, 1.0);
+  // Create mesh with AU-scale radius (minimum 0.01 AU for visibility)
+  const radiusAU = Math.max(radius / AU_METERS, minVisualRadiusAU);
   const color = type === 'star' ? new THREE.Color(0xffd700) : type === 'planet' ? new THREE.Color(0x4a90e2) : new THREE.Color(0x8b4513);
   const material = new THREE.MeshStandardMaterial({ color, roughness: 0.8, metalness: 0.1 });
   const mesh = new THREE.Mesh(new THREE.SphereGeometry(radiusAU, 16, 12), material);
@@ -176,7 +177,7 @@ function mergeBodies(itemA, itemB) {
   larger.body.shapes[0].radius = larger.radius;
 
   // Update mesh geometry to new AU-scale radius
-  const newRadiusAU = Math.max(newRadius / AU_METERS, 1.0);
+  const newRadiusAU = Math.max(newRadius / AU_METERS, minVisualRadiusAU);
   larger.mesh.geometry = new THREE.SphereGeometry(newRadiusAU, 16, 12);
 
   larger.body.position.copy(newPos);
@@ -282,8 +283,8 @@ function updateBodyMeshes() {
     );
     item.mesh.position.copy(positionAU);
 
-    // Convert radius from meters to AU with minimum size of 1 AU
-    const radiusAU = Math.max(item.radius / AU_METERS, 1.0);
+    // Convert radius from meters to AU with minimum size of 0.01 AU, then scale for visibility
+    const radiusAU = Math.max(item.radius / AU_METERS, minVisualRadiusAU);
     item.mesh.scale.setScalar(radiusAU);
 
     if (trailToggle.checked) {
@@ -365,7 +366,7 @@ function updateZoomAndSpeed() {
 
 function updateUI() {
   starMassValue.textContent = `${parseFloat(starMassRange.value).toFixed(1)}`;
-  speedValue.textContent = `${parseFloat(speedRange.value).toFixed(1)}x`;
+  speedValue.textContent = `${parseFloat(speedRange.value).toFixed(1)}`;
   bodyCountValue.textContent = bodyCountRange.value;
 }
 
@@ -393,12 +394,13 @@ function animate(timestamp) {
 
   if (!paused) {
     stepCount += 1;
-    const speedFactor = parseFloat(speedRange.value);
-    const physicsTimeStep = fixedTimeStep * speedFactor;
+    const speedFactor = parseFloat(speedRange.value); // Simulation speed in days/sec
+    const physicsTimeStep = deltaSeconds * speedFactor * SECONDS_PER_DAY;
     simulationTime += physicsTimeStep;
     accumulatedRealTime += deltaSeconds;
     applyGravitationalForces();
     world.step(physicsTimeStep, deltaSeconds, 4);
+    console.log(`Step: ${stepCount}, physicsTimeStep: ${physicsTimeStep.toFixed(2)}, Sim Time: ${(simulationTime / SECONDS_PER_DAY).toFixed(2)} days, Real Time: ${accumulatedRealTime.toFixed(2)} s`);
     // Process deferred merges after physics step
     while (pendingMerges.length > 0) {
       const merge = pendingMerges.shift();
