@@ -1,18 +1,12 @@
 import { readFile } from 'fs/promises'
-import type { MasterFile } from '../shared/types'
+import type { ImportResult, MasterFile } from '../shared/types'
 import { sortRecordsByDateDescending } from '../shared/records'
-import { parseMonarchTsv, type ParseError } from './tsv'
+import { parseMonarchTsv } from './tsv'
 import { loadMasterFile, saveMasterFile } from './master-file'
 import { mergeIntoMaster } from './merge'
 import { detectTransfers } from './transfer-detection'
 
-export interface ImportResult {
-  master: MasterFile
-  added: number
-  skipped: number
-  autoIgnored: number
-  parseErrors: ParseError[]
-}
+export type { ImportResult }
 
 /**
  * End-to-end import: read and parse a Monarch TSV file, merge the parsed

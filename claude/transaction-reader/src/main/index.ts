@@ -1,5 +1,17 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { join } from 'path'
+import type {
+  ImportResult,
+  MasterFile,
+  TransactionRecord,
+} from '../shared/types'
+import { sortRecordsByDateDescending } from '../shared/records'
+import { importTsvFile } from './import'
+import { loadMasterFile, saveMasterFile } from './master-file'
+
+function masterFilePath(): string {
+  return join(app.getPath('userData'), 'master.json')
+}
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -20,14 +32,30 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  ipcMain.handle('dialog:openTsv', async () => {
+  ipcMain.handle('import-tsv', async (): Promise<ImportResult | null> => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
-      title: 'Import TSV File',
+      title: 'Import Monarch TSV',
       filters: [{ name: 'TSV Files', extensions: ['tsv'] }],
       properties: ['openFile']
     })
-    return canceled ? null : filePaths[0]
+    if (canceled || filePaths.length === 0) return null
+    return importTsvFile(filePaths[0], masterFilePath())
   })
+
+  ipcMain.handle('load-master', async (): Promise<MasterFile> => {
+    return loadMasterFile(masterFilePath())
+  })
+
+  ipcMain.handle(
+    'save-master',
+    async (_event, records: TransactionRecord[]): Promise<void> => {
+      const file: MasterFile = {
+        version: 1,
+        records: sortRecordsByDateDescending(records)
+      }
+      await saveMasterFile(masterFilePath(), file)
+    }
+  )
 
   createWindow()
 })

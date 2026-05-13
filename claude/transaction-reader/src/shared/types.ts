@@ -42,8 +42,33 @@ export interface MasterFile {
   records: TransactionRecord[]
 }
 
+/** A row that could not be parsed from a TSV import. */
+export interface ParseError {
+  /** 1-based line number in the source text, matching what an editor would show. */
+  lineNumber: number
+  raw: string
+  reason: string
+}
+
+/** Outcome of a single TSV import, returned to the renderer for UI feedback. */
+export interface ImportResult {
+  master: MasterFile
+  added: number
+  skipped: number
+  autoIgnored: number
+  parseErrors: ParseError[]
+}
+
 export interface ElectronApi {
-  openTsvDialog: () => Promise<string | null>
+  /**
+   * Open a file picker for a Monarch TSV export and import it.
+   * Returns the import result, or null if the user cancelled the dialog.
+   */
+  importTsv: () => Promise<ImportResult | null>
+  /** Read the current master file (returns an empty one on first run). */
+  loadMaster: () => Promise<MasterFile>
+  /** Persist the renderer's current set of records (overrides + ignored flags included). */
+  saveMaster: (records: TransactionRecord[]) => Promise<void>
 }
 
 declare global {

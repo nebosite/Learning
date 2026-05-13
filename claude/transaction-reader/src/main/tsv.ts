@@ -1,15 +1,10 @@
-import type { IsoDate, OriginalTransaction } from '../shared/types'
+import type { IsoDate, OriginalTransaction, ParseError } from '../shared/types'
+
+export type { ParseError }
 
 export interface ParsedRow {
   raw: string
   parsed: OriginalTransaction
-}
-
-export interface ParseError {
-  /** 1-based line number in the source text, matching what an editor would show. */
-  lineNumber: number
-  raw: string
-  reason: string
 }
 
 export interface ParseResult {
