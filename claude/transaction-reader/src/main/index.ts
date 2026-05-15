@@ -8,6 +8,7 @@ import type {
 import { sortRecordsByDateDescending } from '../shared/records'
 import { importTsvFile } from './import'
 import { loadMasterFile, saveMasterFile } from './master-file'
+import { makeSeedRecords } from './seed'
 
 function masterFilePath(): string {
   return join(app.getPath('userData'), 'master.json')
@@ -43,7 +44,20 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('load-master', async (): Promise<MasterFile> => {
-    return loadMasterFile(masterFilePath())
+    const path = masterFilePath()
+    const file = await loadMasterFile(path)
+    if (file.records.length === 0) {
+      // Seed on first run so the override UI has something to demonstrate.
+      // Persisted to disk immediately so subsequent loads return the same
+      // records (and imports merge against them rather than against empty).
+      const seeded: MasterFile = {
+        version: 1,
+        records: sortRecordsByDateDescending(makeSeedRecords()),
+      }
+      await saveMasterFile(path, seeded)
+      return seeded
+    }
+    return file
   })
 
   ipcMain.handle(

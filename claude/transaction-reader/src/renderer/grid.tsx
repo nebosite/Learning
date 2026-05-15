@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { OriginalTransaction, TransactionRecord } from '../shared/types'
 import { effectiveValue } from '../shared/records'
 import './grid.css'
 
-type ColumnField = keyof OriginalTransaction | 'ignored'
+type EditableField = keyof OriginalTransaction
+type ColumnField = EditableField | 'ignored'
 
 interface Column {
   field: ColumnField
@@ -42,12 +43,36 @@ function formatField(value: unknown, field: ColumnField): string {
   return value == null ? '' : String(value)
 }
 
-interface GridProps {
-  records: TransactionRecord[]
-  onRemoveOverride: (index: number, field: keyof OriginalTransaction) => void
+function inputType(field: EditableField): 'text' | 'number' | 'date' {
+  if (field === 'amount') return 'number'
+  if (field === 'date') return 'date'
+  return 'text'
 }
 
-export function Grid({ records, onRemoveOverride }: GridProps): JSX.Element {
+/** Convert a field value to the string an input should display when editing. */
+function valueToInput(value: OriginalTransaction[EditableField]): string {
+  return value == null ? '' : String(value)
+}
+
+interface GridProps {
+  records: TransactionRecord[]
+  onSetField: (
+    index: number,
+    field: EditableField,
+    value: OriginalTransaction[EditableField],
+  ) => void
+  onRemoveOverride: (index: number, field: EditableField) => void
+  onToggleIgnored: (index: number) => void
+  onDelete: (index: number) => void
+}
+
+export function Grid({
+  records,
+  onSetField,
+  onRemoveOverride,
+  onToggleIgnored,
+  onDelete,
+}: GridProps): JSX.Element {
   return (
     <div className="grid-scroll">
       <div className="grid">
@@ -56,11 +81,15 @@ export function Grid({ records, onRemoveOverride }: GridProps): JSX.Element {
             {col.label}
           </div>
         ))}
+        <div className="header-cell" aria-label="Delete" />
         {records.map((record, idx) => (
           <Row
             key={idx}
             record={record}
+            onSetField={(field, value) => onSetField(idx, field, value)}
             onRemoveOverride={(field) => onRemoveOverride(idx, field)}
+            onToggleIgnored={() => onToggleIgnored(idx)}
+            onDelete={() => onDelete(idx)}
           />
         ))}
       </div>
@@ -70,12 +99,19 @@ export function Grid({ records, onRemoveOverride }: GridProps): JSX.Element {
 
 interface RowProps {
   record: TransactionRecord
-  onRemoveOverride: (field: keyof OriginalTransaction) => void
+  onSetField: (field: EditableField, value: OriginalTransaction[EditableField]) => void
+  onRemoveOverride: (field: EditableField) => void
+  onToggleIgnored: () => void
+  onDelete: () => void
 }
 
-function Row({ record, onRemoveOverride }: RowProps): JSX.Element {
-  // `display: contents` keeps these cells as direct grid children for layout
-  // while letting us group them in the DOM for keyed rendering.
+function Row({
+  record,
+  onSetField,
+  onRemoveOverride,
+  onToggleIgnored,
+  onDelete,
+}: RowProps): JSX.Element {
   return (
     <div style={{ display: 'contents' }}>
       {COLUMNS.map((col) => (
@@ -83,9 +119,22 @@ function Row({ record, onRemoveOverride }: RowProps): JSX.Element {
           key={col.field}
           record={record}
           column={col}
+          onSetField={onSetField}
           onRemoveOverride={onRemoveOverride}
+          onToggleIgnored={onToggleIgnored}
         />
       ))}
+      <div className={`cell cell-delete${record.ignored ? ' cell-ignored' : ''}`}>
+        <button
+          type="button"
+          className="delete-btn"
+          onClick={onDelete}
+          title="Delete this record"
+          aria-label="Delete this record"
+        >
+          ×
+        </button>
+      </div>
     </div>
   )
 }
@@ -93,44 +142,163 @@ function Row({ record, onRemoveOverride }: RowProps): JSX.Element {
 interface CellProps {
   record: TransactionRecord
   column: Column
-  onRemoveOverride: (field: keyof OriginalTransaction) => void
+  onSetField: (field: EditableField, value: OriginalTransaction[EditableField]) => void
+  onRemoveOverride: (field: EditableField) => void
+  onToggleIgnored: () => void
 }
 
-function Cell({ record, column, onRemoveOverride }: CellProps): JSX.Element {
+function Cell({
+  record,
+  column,
+  onSetField,
+  onRemoveOverride,
+  onToggleIgnored,
+}: CellProps): JSX.Element {
   const [hover, setHover] = useState(false)
+  const [editing, setEditing] = useState(false)
 
   const isIgnoredRow = record.ignored
-  const classes = ['cell']
-  if (column.align === 'right') classes.push('cell-amount')
-  if (isIgnoredRow) classes.push('cell-ignored')
 
   if (column.field === 'ignored') {
-    return <div className={classes.join(' ')}>{formatField(record.ignored, 'ignored')}</div>
+    return (
+      <div className={`cell${isIgnoredRow ? ' cell-ignored' : ''}`}>
+        <input
+          type="checkbox"
+          className="cell-ignore-check"
+          checked={record.ignored}
+          onChange={onToggleIgnored}
+          aria-label="Ignored"
+        />
+      </div>
+    )
   }
 
   const field = column.field
   const overridden = record.overrides[field] !== undefined
   const value = effectiveValue(record, field)
+
+  if (editing) {
+    return (
+      <CellEditor
+        field={field}
+        initialValue={value}
+        align={column.align}
+        onSave={(v) => {
+          onSetField(field, v)
+          setEditing(false)
+        }}
+        onCancel={() => setEditing(false)}
+      />
+    )
+  }
+
+  const classes = ['cell']
+  if (column.align === 'right') classes.push('cell-amount')
+  if (isIgnoredRow) classes.push('cell-ignored')
   if (overridden) classes.push('cell-overridden')
-  if (column.field === 'amount' && typeof value === 'number' && value < 0) {
+  if (field === 'amount' && typeof value === 'number' && value < 0) {
     classes.push('cell-negative')
   }
 
   return (
     <div
       className={classes.join(' ')}
+      onClick={() => {
+        setHover(false)
+        setEditing(true)
+      }}
       onMouseEnter={overridden ? () => setHover(true) : undefined}
       onMouseLeave={overridden ? () => setHover(false) : undefined}
     >
-      {formatField(value, column.field)}
+      <div className="cell-content">{formatField(value, field)}</div>
       {overridden && hover && (
-        <div className="tooltip">
+        <div className="tooltip" onClick={(e) => e.stopPropagation()}>
           <div className="tooltip-original">
-            Original: <strong>{formatField(record.original[field], column.field)}</strong>
+            Original: <strong>{formatField(record.original[field], field)}</strong>
           </div>
-          <button onClick={() => onRemoveOverride(field)}>Remove override</button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onRemoveOverride(field)
+              setHover(false)
+            }}
+          >
+            Remove override
+          </button>
         </div>
       )}
+    </div>
+  )
+}
+
+interface CellEditorProps {
+  field: EditableField
+  initialValue: OriginalTransaction[EditableField]
+  align?: 'left' | 'right'
+  onSave: (value: OriginalTransaction[EditableField]) => void
+  onCancel: () => void
+}
+
+function CellEditor({
+  field,
+  initialValue,
+  align,
+  onSave,
+  onCancel,
+}: CellEditorProps): JSX.Element {
+  const [input, setInput] = useState(() => valueToInput(initialValue))
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    inputRef.current?.focus()
+    inputRef.current?.select()
+  }, [])
+
+  function commit(): void {
+    if (field === 'amount') {
+      const n = Number(input)
+      if (Number.isNaN(n)) {
+        onCancel()
+        return
+      }
+      onSave(n as OriginalTransaction[EditableField])
+      return
+    }
+    if (field === 'date') {
+      // <input type="date"> yields '' or YYYY-MM-DD
+      if (input === '') {
+        onCancel()
+        return
+      }
+      onSave(input as OriginalTransaction[EditableField])
+      return
+    }
+    onSave(input as OriginalTransaction[EditableField])
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>): void {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      commit()
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      onCancel()
+    }
+  }
+
+  const classes = ['cell', 'cell-editing']
+  return (
+    <div className={classes.join(' ')}>
+      <input
+        ref={inputRef}
+        type={inputType(field)}
+        step={field === 'amount' ? '0.01' : undefined}
+        value={input}
+        className={`cell-edit-input${align === 'right' ? ' cell-amount' : ''}`}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={onKeyDown}
+        onBlur={commit}
+      />
     </div>
   )
 }

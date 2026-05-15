@@ -17,7 +17,8 @@
     minmax(140px, 2fr)  /* Notes */
     minmax(80px, 1fr)   /* Tags */
     100px               /* Owner */
-    70px;               /* Ignored */
+    70px                /* Ignored */
+    36px;               /* Delete */
   font-family: system-ui, sans-serif;
   font-size: 13px;
 }
@@ -35,10 +36,16 @@
 .cell {
   padding: 6px 8px;
   border-bottom: 1px solid #eee;
+  position: relative;
+  /* overflow stays visible so tooltips and edit inputs aren't clipped;
+     truncation lives on .cell-content inside */
+}
+
+.cell-content {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  position: relative;
+  cursor: text;
 }
 
 .cell-amount {
@@ -52,12 +59,39 @@
 
 .cell-overridden {
   background: #fff7c2;
+}
+
+.cell-overridden .cell-content {
   cursor: help;
 }
 
 .cell-ignored {
   color: #999;
-  text-decoration: line-through;
+}
+
+.cell-editing {
+  padding: 0;
+}
+
+.cell-edit-input {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  font: inherit;
+  border: 2px solid #3b82f6;
+  background: white;
+  color: inherit;
+}
+
+.cell-edit-input.cell-amount {
+  text-align: right;
+}
+
+.cell-ignore-check {
+  display: block;
+  margin: 0 auto;
+  cursor: pointer;
 }
 
 .tooltip {
@@ -84,4 +118,25 @@
   font-size: 12px;
   padding: 3px 8px;
   cursor: pointer;
+}
+
+.cell-delete {
+  padding: 2px 0;
+  text-align: center;
+}
+
+.delete-btn {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 6px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.delete-btn:hover {
+  background: #fee;
+  color: #c00;
 }
