@@ -175,6 +175,12 @@
   grid-template-columns: var(--grid-template);
 }
 
+/* Lift the row whose category is being edited so its suggestion dropdown
+   is not covered by the rows rendered below it. */
+.grid-row-editing {
+  z-index: 3;
+}
+
 .cell {
   height: 30px;
   box-sizing: border-box;
@@ -236,6 +242,40 @@
 .cell-ignore-check {
   margin: 0 auto;
   cursor: pointer;
+}
+
+.cat-suggest {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 180px;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid #999;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.cat-suggest-item {
+  padding: 4px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cat-suggest-item:hover {
+  background: #f0f0f0;
+}
+
+.cat-suggest-item-active {
+  background: #3b82f6;
+  color: white;
+}
+
+.cat-suggest-item-active:hover {
+  background: #3b82f6;
 }
 
 .cell-delete {

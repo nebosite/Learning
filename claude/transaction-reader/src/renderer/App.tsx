@@ -126,6 +126,11 @@ export default function App(): JSX.Element {
       next[index] = { ...r, overrides: newOverrides }
       return next
     })
+    // A category set from the grid that isn't already known becomes a new
+    // custom category (case-insensitive); the comparison is done by handleAddCategory.
+    if (field === 'category' && typeof value === 'string' && value.trim() !== '') {
+      handleAddCategory(value.trim())
+    }
   }
 
   function handleRemoveOverride(index: number, field: keyof OriginalTransaction): void {
@@ -221,6 +226,7 @@ export default function App(): JSX.Element {
           )}
           <Grid
             records={history.present}
+            categories={categories}
             onSetField={handleSetField}
             onRemoveOverride={handleRemoveOverride}
             onToggleIgnored={handleToggleIgnored}

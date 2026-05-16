@@ -77,6 +77,7 @@ function parseBound(value: string): number | null {
 
 interface GridProps {
   records: TransactionRecord[]
+  categories: string[]
   onSetField: (
     index: number,
     field: EditableField,
@@ -89,6 +90,7 @@ interface GridProps {
 
 export function Grid({
   records,
+  categories,
   onSetField,
   onRemoveOverride,
   onToggleIgnored,
@@ -103,6 +105,8 @@ export function Grid({
   const [dateTo, setDateTo] = useState('')
   const [amountMin, setAmountMin] = useState('')
   const [amountMax, setAmountMax] = useState('')
+  // Original record index whose category cell is being edited, or null.
+  const [editingCategory, setEditingCategory] = useState<number | null>(null)
 
   useLayoutEffect(() => {
     const el = scrollRef.current
@@ -166,6 +170,33 @@ export function Grid({
     setAmountMax('')
   }
 
+  // Scroll the given display row into view if it is outside the viewport.
+  function ensureRowVisible(viewPos: number): void {
+    const el = scrollRef.current
+    if (!el) return
+    const top = viewPos * ROW_HEIGHT
+    if (top < el.scrollTop) {
+      el.scrollTop = top
+    } else if (top + ROW_HEIGHT > el.scrollTop + el.clientHeight) {
+      el.scrollTop = top + ROW_HEIGHT - el.clientHeight
+    }
+  }
+
+  // Commit a category edit. On Enter (`advance`), move the editor down to the
+  // next transaction in the displayed order; otherwise just close the editor.
+  function handleCategoryCommit(recordIndex: number, value: string, advance: boolean): void {
+    const v = value.trim()
+    if (v !== '') onSetField(recordIndex, 'category', v)
+    const curView = order ? order.indexOf(recordIndex) : recordIndex
+    const nextView = curView + 1
+    if (!advance || curView < 0 || nextView >= displayCount) {
+      setEditingCategory(null)
+      return
+    }
+    ensureRowVisible(nextView)
+    setEditingCategory(order ? order[nextView] : nextView)
+  }
+
   // Cycle a column: not sorted -> ascending -> descending -> removed.
   // Adding a column appends it as the lowest sort priority; toggling an
   // existing column's direction leaves its priority unchanged.
@@ -198,6 +229,11 @@ export function Grid({
         key={i}
         top={v * ROW_HEIGHT}
         record={records[i]}
+        categories={categories}
+        categoryEditing={editingCategory === i}
+        onCategoryStartEdit={() => setEditingCategory(i)}
+        onCategoryCommit={(value, advance) => handleCategoryCommit(i, value, advance)}
+        onCategoryCancel={() => setEditingCategory(null)}
         onSetField={(field, value) => onSetField(i, field, value)}
         onRemoveOverride={(field) => onRemoveOverride(i, field)}
         onToggleIgnored={() => onToggleIgnored(i)}
@@ -318,6 +354,11 @@ export function Grid({
 interface RowProps {
   top: number
   record: TransactionRecord
+  categories: string[]
+  categoryEditing: boolean
+  onCategoryStartEdit: () => void
+  onCategoryCommit: (value: string, advance: boolean) => void
+  onCategoryCancel: () => void
   onSetField: (field: EditableField, value: OriginalTransaction[EditableField]) => void
   onRemoveOverride: (field: EditableField) => void
   onToggleIgnored: () => void
@@ -327,18 +368,31 @@ interface RowProps {
 function Row({
   top,
   record,
+  categories,
+  categoryEditing,
+  onCategoryStartEdit,
+  onCategoryCommit,
+  onCategoryCancel,
   onSetField,
   onRemoveOverride,
   onToggleIgnored,
   onDelete,
 }: RowProps): JSX.Element {
   return (
-    <div className="grid-row" style={{ top }}>
+    <div
+      className={`grid-row${categoryEditing ? ' grid-row-editing' : ''}`}
+      style={{ top }}
+    >
       {COLUMNS.map((col) => (
         <Cell
           key={col.field}
           record={record}
           column={col}
+          categories={categories}
+          categoryEditing={col.field === 'category' && categoryEditing}
+          onCategoryStartEdit={onCategoryStartEdit}
+          onCategoryCommit={onCategoryCommit}
+          onCategoryCancel={onCategoryCancel}
           onSetField={onSetField}
           onRemoveOverride={onRemoveOverride}
           onToggleIgnored={onToggleIgnored}
@@ -362,6 +416,11 @@ function Row({
 interface CellProps {
   record: TransactionRecord
   column: Column
+  categories: string[]
+  categoryEditing: boolean
+  onCategoryStartEdit: () => void
+  onCategoryCommit: (value: string, advance: boolean) => void
+  onCategoryCancel: () => void
   onSetField: (field: EditableField, value: OriginalTransaction[EditableField]) => void
   onRemoveOverride: (field: EditableField) => void
   onToggleIgnored: () => void
@@ -370,6 +429,11 @@ interface CellProps {
 function Cell({
   record,
   column,
+  categories,
+  categoryEditing,
+  onCategoryStartEdit,
+  onCategoryCommit,
+  onCategoryCancel,
   onSetField,
   onRemoveOverride,
   onToggleIgnored,
@@ -378,6 +442,7 @@ function Cell({
   const [editing, setEditing] = useState(false)
 
   const isIgnoredRow = record.ignored
+  const isCategory = column.field === 'category'
 
   if (column.field === 'ignored') {
     return (
@@ -396,6 +461,17 @@ function Cell({
   const field = column.field
   const overridden = record.overrides[field] !== undefined
   const value = effectiveValue(record, field)
+
+  if (isCategory && categoryEditing) {
+    return (
+      <CategoryEditor
+        initialValue={value == null ? '' : String(value)}
+        categories={categories}
+        onCommit={onCategoryCommit}
+        onCancel={onCategoryCancel}
+      />
+    )
+  }
 
   if (editing) {
     return (
@@ -425,7 +501,8 @@ function Cell({
       className={classes.join(' ')}
       onClick={() => {
         setHover(false)
-        setEditing(true)
+        if (isCategory) onCategoryStartEdit()
+        else setEditing(true)
       }}
       onMouseEnter={overridden ? () => setHover(true) : undefined}
       onMouseLeave={overridden ? () => setHover(false) : undefined}
@@ -518,6 +595,113 @@ function CellEditor({
         onKeyDown={onKeyDown}
         onBlur={commit}
       />
+    </div>
+  )
+}
+
+interface CategoryEditorProps {
+  initialValue: string
+  categories: string[]
+  /** `advance` is true when committed with Enter (move to the next row). */
+  onCommit: (value: string, advance: boolean) => void
+  onCancel: () => void
+}
+
+function CategoryEditor({
+  initialValue,
+  categories,
+  onCommit,
+  onCancel,
+}: CategoryEditorProps): JSX.Element {
+  const [input, setInput] = useState(initialValue)
+  const [highlight, setHighlight] = useState(0)
+  const inputRef = useRef<HTMLInputElement>(null)
+  // Guards against a trailing blur firing after Enter/Escape/click already
+  // resolved the edit (which would commit or cancel a second time).
+  const doneRef = useRef(false)
+
+  useEffect(() => {
+    inputRef.current?.focus()
+    inputRef.current?.select()
+  }, [])
+
+  // Greedy prefix prediction: categories that start with what's typed, sorted.
+  const matches = useMemo(() => {
+    const sorted = [...categories].sort((a, b) =>
+      a.toLowerCase().localeCompare(b.toLowerCase()),
+    )
+    const q = input.trim().toLowerCase()
+    return q === '' ? sorted : sorted.filter((c) => c.toLowerCase().startsWith(q))
+  }, [categories, input])
+
+  const activeIndex = Math.min(highlight, Math.max(0, matches.length - 1))
+
+  // Complete to the highlighted prediction when one exists; otherwise keep
+  // exactly what was typed — that becomes a brand-new category.
+  function resolvedValue(): string {
+    return matches.length > 0 ? matches[activeIndex] : input.trim()
+  }
+
+  function commit(advance: boolean): void {
+    if (doneRef.current) return
+    doneRef.current = true
+    onCommit(resolvedValue(), advance)
+  }
+
+  function cancel(): void {
+    if (doneRef.current) return
+    doneRef.current = true
+    onCancel()
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>): void {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      commit(true)
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      cancel()
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setHighlight(Math.min(activeIndex + 1, matches.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setHighlight(Math.max(activeIndex - 1, 0))
+    }
+  }
+
+  return (
+    <div className="cell cell-editing">
+      <input
+        ref={inputRef}
+        type="text"
+        value={input}
+        className="cell-edit-input"
+        onChange={(e) => {
+          setInput(e.target.value)
+          setHighlight(0)
+        }}
+        onKeyDown={onKeyDown}
+        onBlur={() => commit(false)}
+      />
+      {matches.length > 0 && (
+        <div className="cat-suggest">
+          {matches.map((c, i) => (
+            <div
+              key={c}
+              className={`cat-suggest-item${i === activeIndex ? ' cat-suggest-item-active' : ''}`}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                if (doneRef.current) return
+                doneRef.current = true
+                onCommit(c, false)
+              }}
+            >
+              {c}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
