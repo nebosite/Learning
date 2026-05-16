@@ -4,7 +4,7 @@ import { effectiveValue } from '../shared/records'
 import { computeVisibleRange } from './virtual'
 import { computeSortOrder } from './sort'
 import type { ColumnKind, SortState } from './sort'
-import { recordMatchesFilter } from './filter'
+import { amountInRange, dateInRange, recordMatchesFilter } from './filter'
 import './grid.css'
 
 const ROW_HEIGHT = 30
@@ -67,6 +67,14 @@ function valueToInput(value: OriginalTransaction[EditableField]): string {
   return value == null ? '' : String(value)
 }
 
+/** Parse a range-input string into a numeric bound; blank or invalid is unbounded. */
+function parseBound(value: string): number | null {
+  const trimmed = value.trim()
+  if (trimmed === '') return null
+  const n = Number(trimmed)
+  return Number.isNaN(n) ? null : n
+}
+
 interface GridProps {
   records: TransactionRecord[]
   onSetField: (
@@ -91,6 +99,10 @@ export function Grid({
   const [viewportHeight, setViewportHeight] = useState(0)
   const [sort, setSort] = useState<SortState[]>([])
   const [filter, setFilter] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [amountMin, setAmountMin] = useState('')
+  const [amountMax, setAmountMax] = useState('')
 
   useLayoutEffect(() => {
     const el = scrollRef.current
@@ -101,34 +113,58 @@ export function Grid({
     return () => window.removeEventListener('resize', measure)
   }, [])
 
+  const minBound = parseBound(amountMin)
+  const maxBound = parseBound(amountMax)
+  const fromBound = dateFrom || null
+  const toBound = dateTo || null
+  const filtersActive =
+    filter.trim() !== '' ||
+    minBound !== null ||
+    maxBound !== null ||
+    fromBound !== null ||
+    toBound !== null
+
   // `order` is the list of original record indices to display, after
   // filtering and sorting. `null` means "show every record in its natural
   // order" — the common, allocation-free case.
   const order = useMemo(() => {
     const trimmed = filter.trim()
-    const filtered =
-      trimmed === ''
-        ? null
-        : records.reduce<number[]>((acc, r, i) => {
-            if (recordMatchesFilter(r, trimmed, TEXT_FIELDS)) acc.push(i)
-            return acc
-          }, [])
+    const filtered = !filtersActive
+      ? null
+      : records.reduce<number[]>((acc, r, i) => {
+          if (
+            recordMatchesFilter(r, trimmed, TEXT_FIELDS) &&
+            amountInRange(r, minBound, maxBound) &&
+            dateInRange(r, fromBound, toBound)
+          ) {
+            acc.push(i)
+          }
+          return acc
+        }, [])
     if (sort.length === 0) return filtered
     const criteria = sort.map((s) => {
       const col = COLUMNS.find((c) => c.field === s.field)
       return { ...s, kind: col?.kind ?? 'text' }
     })
     return computeSortOrder(records, criteria, filtered ?? undefined)
-  }, [records, sort, filter])
+  }, [records, sort, filter, filtersActive, minBound, maxBound, fromBound, toBound])
 
   const displayCount = order ? order.length : records.length
 
-  // A shorter list (or a new filter) can leave the prior scroll position past
-  // the end; jump back to the top so the visible window stays valid.
+  // A shorter list (a new or tightened filter) can leave the prior scroll
+  // position past the end; jump back to the top so the window stays valid.
   useEffect(() => {
     setScrollTop(0)
     if (scrollRef.current) scrollRef.current.scrollTop = 0
-  }, [filter])
+  }, [filter, dateFrom, dateTo, amountMin, amountMax])
+
+  function clearFilters(): void {
+    setFilter('')
+    setDateFrom('')
+    setDateTo('')
+    setAmountMin('')
+    setAmountMax('')
+  }
 
   // Cycle a column: not sorted -> ascending -> descending -> removed.
   // Adding a column appends it as the lowest sort priority; toggling an
@@ -181,10 +217,59 @@ export function Grid({
           onChange={(e) => setFilter(e.target.value)}
           aria-label="Filter transactions"
         />
-        {filter.trim() !== '' && (
-          <span className="grid-filter-count">
-            {displayCount} of {records.length}
-          </span>
+        <span className="filter-range">
+          <span className="filter-range-label">Date</span>
+          <input
+            type="date"
+            className="filter-range-input"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            aria-label="Date from"
+          />
+          <span className="filter-range-dash">–</span>
+          <input
+            type="date"
+            className="filter-range-input"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            aria-label="Date to"
+          />
+        </span>
+        <span className="filter-range">
+          <span className="filter-range-label">Amount</span>
+          <input
+            type="number"
+            step="0.01"
+            className="filter-range-input filter-range-amount"
+            placeholder="min"
+            value={amountMin}
+            onChange={(e) => setAmountMin(e.target.value)}
+            aria-label="Amount minimum"
+          />
+          <span className="filter-range-dash">–</span>
+          <input
+            type="number"
+            step="0.01"
+            className="filter-range-input filter-range-amount"
+            placeholder="max"
+            value={amountMax}
+            onChange={(e) => setAmountMax(e.target.value)}
+            aria-label="Amount maximum"
+          />
+        </span>
+        {filtersActive && (
+          <>
+            <span className="grid-filter-count">
+              {displayCount} of {records.length}
+            </span>
+            <button
+              type="button"
+              className="filter-clear-btn"
+              onClick={clearFilters}
+            >
+              Clear filters
+            </button>
+          </>
         )}
       </div>
       <div

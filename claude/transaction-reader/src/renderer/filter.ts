@@ -18,3 +18,34 @@ export function recordMatchesFilter(
     return value != null && String(value).toLowerCase().includes(q)
   })
 }
+
+/**
+ * Whether a record's effective amount falls within `[min, max]`, inclusive.
+ * A `null` bound is unbounded on that side; `null`/`null` matches everything.
+ */
+export function amountInRange(
+  record: TransactionRecord,
+  min: number | null,
+  max: number | null,
+): boolean {
+  const amount = effectiveValue(record, 'amount')
+  if (min !== null && amount < min) return false
+  if (max !== null && amount > max) return false
+  return true
+}
+
+/**
+ * Whether a record's effective date falls within `[from, to]`, inclusive.
+ * Bounds are ISO date strings (YYYY-MM-DD) compared lexically; a `null` bound
+ * is unbounded on that side.
+ */
+export function dateInRange(
+  record: TransactionRecord,
+  from: string | null,
+  to: string | null,
+): boolean {
+  const date = effectiveValue(record, 'date')
+  if (from !== null && date < from) return false
+  if (to !== null && date > to) return false
+  return true
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { OriginalTransaction, TransactionRecord } from '../shared/types'
-import { recordMatchesFilter } from './filter'
+import { amountInRange, dateInRange, recordMatchesFilter } from './filter'
 
 function rec(
   original: Partial<OriginalTransaction>,
@@ -56,5 +56,50 @@ describe('recordMatchesFilter', () => {
     const r = rec({ owner: 'Alice' })
     expect(recordMatchesFilter(r, 'alice', FIELDS)).toBe(false)
     expect(recordMatchesFilter(r, 'alice', ['owner'])).toBe(true)
+  })
+})
+
+describe('amountInRange', () => {
+  it('matches everything when both bounds are null', () => {
+    expect(amountInRange(rec({ amount: -50 }), null, null)).toBe(true)
+  })
+
+  it('respects an inclusive lower bound', () => {
+    expect(amountInRange(rec({ amount: 10 }), 10, null)).toBe(true)
+    expect(amountInRange(rec({ amount: 9.99 }), 10, null)).toBe(false)
+  })
+
+  it('respects an inclusive upper bound', () => {
+    expect(amountInRange(rec({ amount: 10 }), null, 10)).toBe(true)
+    expect(amountInRange(rec({ amount: 10.01 }), null, 10)).toBe(false)
+  })
+
+  it('handles negative ranges', () => {
+    expect(amountInRange(rec({ amount: -25 }), -100, 0)).toBe(true)
+    expect(amountInRange(rec({ amount: 5 }), -100, 0)).toBe(false)
+  })
+
+  it('uses the overridden amount when present', () => {
+    expect(amountInRange(rec({ amount: 500 }, { amount: 5 }), 0, 10)).toBe(true)
+  })
+})
+
+describe('dateInRange', () => {
+  it('matches everything when both bounds are null', () => {
+    expect(dateInRange(rec({ date: '2021-06-15' }), null, null)).toBe(true)
+  })
+
+  it('respects an inclusive from bound', () => {
+    expect(dateInRange(rec({ date: '2021-06-15' }), '2021-06-15', null)).toBe(true)
+    expect(dateInRange(rec({ date: '2021-06-14' }), '2021-06-15', null)).toBe(false)
+  })
+
+  it('respects an inclusive to bound', () => {
+    expect(dateInRange(rec({ date: '2021-06-15' }), null, '2021-06-15')).toBe(true)
+    expect(dateInRange(rec({ date: '2021-06-16' }), null, '2021-06-15')).toBe(false)
+  })
+
+  it('uses the overridden date when present', () => {
+    expect(dateInRange(rec({ date: '2025-01-01' }, { date: '2021-06-15' }), '2021-01-01', '2021-12-31')).toBe(true)
   })
 })
