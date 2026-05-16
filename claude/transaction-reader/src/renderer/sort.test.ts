@@ -78,6 +78,16 @@ describe('computeSortOrder', () => {
     expect(order).toEqual([3, 1, 2, 0])
   })
 
+  it('sorts only the given subset of indices', () => {
+    const records = [rec({ amount: 30 }), rec({ amount: 10 }), rec({ amount: 20 }), rec({ amount: 5 })]
+    const order = computeSortOrder(
+      records,
+      [{ field: 'amount', direction: 'asc', kind: 'number' }],
+      [0, 2, 1],
+    )
+    expect(order).toEqual([1, 2, 0])
+  })
+
   it('applies criteria in priority order', () => {
     // Same records, amount-first gives a different overall order than category-first.
     const records = [

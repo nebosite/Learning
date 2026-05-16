@@ -12,12 +12,42 @@
     70px                /* Ignored */
     36px;               /* Delete */
   --grid-min-width: 1166px;
-  height: calc(100vh - 140px);
+  height: calc(100vh - 180px);
   overflow: auto;
   border: 1px solid #ddd;
   background: white;
   font-family: system-ui, sans-serif;
   font-size: 13px;
+}
+
+.grid-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  margin-bottom: 8px;
+}
+
+.grid-filter-input {
+  flex: 1;
+  max-width: 320px;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.grid-filter-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+.grid-filter-count {
+  font-size: 12px;
+  color: #666;
 }
 
 .grid-header {

@@ -49,16 +49,18 @@ function compareField(
  * applied in priority order: the first decides the overall order, later ones
  * break ties within equal runs of the earlier ones.
  *
- * The result is a permutation of `0..records.length-1`; callers index into the
- * original `records` array with it, so edit/delete callbacks keep their real
- * indices. The sort is stable: records equal on every criterion keep their
- * original relative order.
+ * By default the result is a permutation of `0..records.length-1`. Pass
+ * `subset` to sort only those indices (e.g. a filtered set) — the result is
+ * then a reordering of `subset`. Either way callers index into the original
+ * `records` array, so edit/delete callbacks keep their real indices. The sort
+ * is stable: records equal on every criterion keep their original order.
  */
 export function computeSortOrder(
   records: readonly TransactionRecord[],
   criteria: readonly SortCriterion[],
+  subset?: readonly number[],
 ): number[] {
-  const order = records.map((_, i) => i)
+  const order = subset ? subset.slice() : records.map((_, i) => i)
   if (criteria.length === 0) return order
   order.sort((ia, ib) => {
     for (const c of criteria) {

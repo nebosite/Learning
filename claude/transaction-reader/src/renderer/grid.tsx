@@ -4,6 +4,7 @@ import { effectiveValue } from '../shared/records'
 import { computeVisibleRange } from './virtual'
 import { computeSortOrder } from './sort'
 import type { ColumnKind, SortState } from './sort'
+import { recordMatchesFilter } from './filter'
 import './grid.css'
 
 const ROW_HEIGHT = 30
@@ -31,6 +32,11 @@ const COLUMNS: Column[] = [
   { field: 'owner', label: 'Owner', kind: 'text' },
   { field: 'ignored', label: 'Ignored', kind: 'boolean' },
 ]
+
+/** Columns the free-text filter searches: every text-valued column. */
+const TEXT_FIELDS: EditableField[] = COLUMNS.filter((c) => c.kind === 'text').map(
+  (c) => c.field as EditableField,
+)
 
 function formatDate(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number)
@@ -84,6 +90,7 @@ export function Grid({
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
   const [sort, setSort] = useState<SortState[]>([])
+  const [filter, setFilter] = useState('')
 
   useLayoutEffect(() => {
     const el = scrollRef.current
@@ -94,14 +101,34 @@ export function Grid({
     return () => window.removeEventListener('resize', measure)
   }, [])
 
+  // `order` is the list of original record indices to display, after
+  // filtering and sorting. `null` means "show every record in its natural
+  // order" — the common, allocation-free case.
   const order = useMemo(() => {
-    if (sort.length === 0) return null
+    const trimmed = filter.trim()
+    const filtered =
+      trimmed === ''
+        ? null
+        : records.reduce<number[]>((acc, r, i) => {
+            if (recordMatchesFilter(r, trimmed, TEXT_FIELDS)) acc.push(i)
+            return acc
+          }, [])
+    if (sort.length === 0) return filtered
     const criteria = sort.map((s) => {
       const col = COLUMNS.find((c) => c.field === s.field)
       return { ...s, kind: col?.kind ?? 'text' }
     })
-    return computeSortOrder(records, criteria)
-  }, [records, sort])
+    return computeSortOrder(records, criteria, filtered ?? undefined)
+  }, [records, sort, filter])
+
+  const displayCount = order ? order.length : records.length
+
+  // A shorter list (or a new filter) can leave the prior scroll position past
+  // the end; jump back to the top so the visible window stays valid.
+  useEffect(() => {
+    setScrollTop(0)
+    if (scrollRef.current) scrollRef.current.scrollTop = 0
+  }, [filter])
 
   // Cycle a column: not sorted -> ascending -> descending -> removed.
   // Adding a column appends it as the lowest sort priority; toggling an
@@ -123,7 +150,7 @@ export function Grid({
     scrollTop,
     viewportHeight,
     ROW_HEIGHT,
-    records.length,
+    displayCount,
     OVERSCAN,
   )
 
@@ -144,12 +171,28 @@ export function Grid({
   }
 
   return (
-    <div
-      className="grid-scroll"
-      ref={scrollRef}
-      onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
-    >
-      <div className="grid-header">
+    <div className="grid-container">
+      <div className="grid-filter">
+        <input
+          type="text"
+          className="grid-filter-input"
+          placeholder="Filter transactions…"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          aria-label="Filter transactions"
+        />
+        {filter.trim() !== '' && (
+          <span className="grid-filter-count">
+            {displayCount} of {records.length}
+          </span>
+        )}
+      </div>
+      <div
+        className="grid-scroll"
+        ref={scrollRef}
+        onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+      >
+        <div className="grid-header">
         {COLUMNS.map((col) => {
           const sortIndex = sort.findIndex((s) => s.field === col.field)
           const active = sortIndex !== -1
@@ -179,11 +222,9 @@ export function Grid({
         })}
         <div className="header-cell" aria-label="Delete" />
       </div>
-      <div
-        className="grid-body"
-        style={{ height: records.length * ROW_HEIGHT }}
-      >
-        {rows}
+        <div className="grid-body" style={{ height: displayCount * ROW_HEIGHT }}>
+          {rows}
+        </div>
       </div>
     </div>
   )
