@@ -6,8 +6,12 @@ import type {
   TransactionRecord,
 } from '../shared/types'
 import { Grid } from './grid'
+import { SettingsView } from './settings'
+import './app.css'
 
 const MAX_HISTORY = 100
+
+type View = 'transactions' | 'settings'
 
 interface History {
   past: TransactionRecord[][]
@@ -18,9 +22,11 @@ interface History {
 const emptyHistory: History = { past: [], present: [], future: [] }
 
 export default function App(): JSX.Element {
+  const [view, setView] = useState<View>('transactions')
   const [history, setHistory] = useState<History>(emptyHistory)
   const [savedRef, setSavedRef] = useState<TransactionRecord[]>(emptyHistory.present)
   const [lastImport, setLastImport] = useState<ImportResult | null>(null)
+  const [categories, setCategories] = useState<string[]>([])
   const dirty = history.present !== savedRef
 
   const reset = useCallback((records: TransactionRecord[]): void => {
@@ -30,6 +36,7 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     window.api.loadMaster().then((m) => reset(m.records))
+    window.api.loadSettings().then((s) => setCategories(s.categories))
   }, [reset])
 
   const apply = useCallback(
@@ -145,48 +152,90 @@ export default function App(): JSX.Element {
     apply((prev) => prev.filter((_, i) => i !== index))
   }
 
+  function persistCategories(next: string[]): void {
+    setCategories(next)
+    void window.api.saveCategories(next)
+  }
+
+  function handleAddCategory(name: string): void {
+    if (categories.some((c) => c.toLowerCase() === name.toLowerCase())) return
+    persistCategories([...categories, name])
+  }
+
+  function handleDeleteCategory(name: string): void {
+    persistCategories(categories.filter((c) => c !== name))
+  }
+
   return (
-    <div style={{ padding: '1rem', fontFamily: 'system-ui, sans-serif' }}>
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.75rem',
-          marginBottom: '0.75rem',
-        }}
-      >
-        <h1 style={{ margin: 0, fontSize: '1.25rem' }}>Transaction Reader</h1>
-        <button onClick={handleImport}>Import</button>
-        <button onClick={handleSave} disabled={!dirty}>
-          {dirty ? 'Save *' : 'Save'}
-        </button>
-        <button onClick={undo} disabled={history.past.length === 0} title="Undo (Ctrl+Z)">
-          Undo
+    <div className="app">
+      <div className="tabs">
+        <button
+          className={`tab${view === 'transactions' ? ' tab-active' : ''}`}
+          onClick={() => setView('transactions')}
+        >
+          Transactions
         </button>
         <button
-          onClick={redo}
-          disabled={history.future.length === 0}
-          title="Redo (Ctrl+Shift+Z)"
+          className={`tab${view === 'settings' ? ' tab-active' : ''}`}
+          onClick={() => setView('settings')}
         >
-          Redo
+          Settings
         </button>
-        <span style={{ marginLeft: 'auto', color: '#666', fontSize: '0.85rem' }}>
-          {history.present.length} records{dirty ? ' (unsaved changes)' : ''}
-        </span>
-      </header>
-      {lastImport && (
-        <p style={{ marginTop: 0, color: '#555', fontSize: '0.85rem' }}>
-          Last import: {lastImport.added} added, {lastImport.skipped} skipped,{' '}
-          {lastImport.autoIgnored} auto-ignored, {lastImport.parseErrors.length} parse errors.
-        </p>
+      </div>
+
+      {view === 'transactions' ? (
+        <div className="tab-panel">
+          <div className="toolbar">
+            <button onClick={handleImport}>Import</button>
+            <button onClick={handleSave} disabled={!dirty}>
+              {dirty ? 'Save *' : 'Save'}
+            </button>
+            <button
+              className="icon-btn"
+              onClick={undo}
+              disabled={history.past.length === 0}
+              title="Undo (Ctrl+Z)"
+              aria-label="Undo"
+            >
+              ↶
+            </button>
+            <button
+              className="icon-btn"
+              onClick={redo}
+              disabled={history.future.length === 0}
+              title="Redo (Ctrl+Shift+Z)"
+              aria-label="Redo"
+            >
+              ↷
+            </button>
+            <span className="record-count">
+              {history.present.length} records{dirty ? ' (unsaved changes)' : ''}
+            </span>
+          </div>
+          {lastImport && (
+            <p className="import-status">
+              Last import: {lastImport.added} added, {lastImport.skipped} skipped,{' '}
+              {lastImport.autoIgnored} auto-ignored, {lastImport.parseErrors.length} parse
+              errors.
+            </p>
+          )}
+          <Grid
+            records={history.present}
+            onSetField={handleSetField}
+            onRemoveOverride={handleRemoveOverride}
+            onToggleIgnored={handleToggleIgnored}
+            onDelete={handleDelete}
+          />
+        </div>
+      ) : (
+        <div className="tab-panel">
+          <SettingsView
+            categories={categories}
+            onAddCategory={handleAddCategory}
+            onDeleteCategory={handleDeleteCategory}
+          />
+        </div>
       )}
-      <Grid
-        records={history.present}
-        onSetField={handleSetField}
-        onRemoveOverride={handleRemoveOverride}
-        onToggleIgnored={handleToggleIgnored}
-        onDelete={handleDelete}
-      />
     </div>
   )
 }

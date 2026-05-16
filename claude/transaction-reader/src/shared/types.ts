@@ -59,6 +59,23 @@ export interface ImportResult {
   parseErrors: ParseError[]
 }
 
+/** Persisted window size in pixels. */
+export interface WindowSize {
+  width: number
+  height: number
+}
+
+/**
+ * App settings, persisted in their own file independently of the transaction
+ * master file. Versioned so the schema can be migrated.
+ */
+export interface Settings {
+  version: 1
+  categories: string[]
+  /** Last window size. Absent until the window has been resized at least once. */
+  window?: WindowSize
+}
+
 export interface ElectronApi {
   /**
    * Open a file picker for a Monarch TSV export and import it.
@@ -69,6 +86,10 @@ export interface ElectronApi {
   loadMaster: () => Promise<MasterFile>
   /** Persist the renderer's current set of records (overrides + ignored flags included). */
   saveMaster: (records: TransactionRecord[]) => Promise<void>
+  /** Read app settings (returns defaults on first run). */
+  loadSettings: () => Promise<Settings>
+  /** Persist the custom-category list. Other settings fields are left untouched. */
+  saveCategories: (categories: string[]) => Promise<void>
 }
 
 declare global {
