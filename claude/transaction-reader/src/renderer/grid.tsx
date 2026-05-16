@@ -1,7 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { OriginalTransaction, TransactionRecord } from '../shared/types'
 import { effectiveValue } from '../shared/records'
+import { computeVisibleRange } from './virtual'
 import './grid.css'
+
+const ROW_HEIGHT = 30
+const OVERSCAN = 8
 
 type EditableField = keyof OriginalTransaction
 type ColumnField = EditableField | 'ignored'
@@ -73,31 +77,71 @@ export function Grid({
   onToggleIgnored,
   onDelete,
 }: GridProps): JSX.Element {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewportHeight, setViewportHeight] = useState(0)
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const measure = (): void => setViewportHeight(el.clientHeight)
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [])
+
+  const { first, last } = computeVisibleRange(
+    scrollTop,
+    viewportHeight,
+    ROW_HEIGHT,
+    records.length,
+    OVERSCAN,
+  )
+
+  const rows: JSX.Element[] = []
+  for (let i = first; i < last; i++) {
+    rows.push(
+      <Row
+        key={i}
+        index={i}
+        record={records[i]}
+        onSetField={(field, value) => onSetField(i, field, value)}
+        onRemoveOverride={(field) => onRemoveOverride(i, field)}
+        onToggleIgnored={() => onToggleIgnored(i)}
+        onDelete={() => onDelete(i)}
+      />,
+    )
+  }
+
   return (
-    <div className="grid-scroll">
-      <div className="grid">
+    <div
+      className="grid-scroll"
+      ref={scrollRef}
+      onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+    >
+      <div className="grid-header">
         {COLUMNS.map((col) => (
-          <div key={col.field} className="header-cell">
+          <div
+            key={col.field}
+            className={`header-cell${col.align === 'right' ? ' header-cell-amount' : ''}`}
+          >
             {col.label}
           </div>
         ))}
         <div className="header-cell" aria-label="Delete" />
-        {records.map((record, idx) => (
-          <Row
-            key={idx}
-            record={record}
-            onSetField={(field, value) => onSetField(idx, field, value)}
-            onRemoveOverride={(field) => onRemoveOverride(idx, field)}
-            onToggleIgnored={() => onToggleIgnored(idx)}
-            onDelete={() => onDelete(idx)}
-          />
-        ))}
+      </div>
+      <div
+        className="grid-body"
+        style={{ height: records.length * ROW_HEIGHT }}
+      >
+        {rows}
       </div>
     </div>
   )
 }
 
 interface RowProps {
+  index: number
   record: TransactionRecord
   onSetField: (field: EditableField, value: OriginalTransaction[EditableField]) => void
   onRemoveOverride: (field: EditableField) => void
@@ -106,6 +150,7 @@ interface RowProps {
 }
 
 function Row({
+  index,
   record,
   onSetField,
   onRemoveOverride,
@@ -113,7 +158,7 @@ function Row({
   onDelete,
 }: RowProps): JSX.Element {
   return (
-    <div style={{ display: 'contents' }}>
+    <div className="grid-row" style={{ top: index * ROW_HEIGHT }}>
       {COLUMNS.map((col) => (
         <Cell
           key={col.field}
@@ -286,9 +331,8 @@ function CellEditor({
     }
   }
 
-  const classes = ['cell', 'cell-editing']
   return (
-    <div className={classes.join(' ')}>
+    <div className="cell cell-editing">
       <input
         ref={inputRef}
         type={inputType(field)}
