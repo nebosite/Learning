@@ -1,7 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { OriginalTransaction, TransactionRecord } from '../shared/types'
 import { effectiveValue } from '../shared/records'
 import { computeVisibleRange } from './virtual'
+import { computeSortOrder } from './sort'
+import type { ColumnKind, SortState } from './sort'
 import './grid.css'
 
 const ROW_HEIGHT = 30
@@ -13,20 +15,21 @@ type ColumnField = EditableField | 'ignored'
 interface Column {
   field: ColumnField
   label: string
+  kind: ColumnKind
   align?: 'left' | 'right'
 }
 
 const COLUMNS: Column[] = [
-  { field: 'date', label: 'Date' },
-  { field: 'account', label: 'Account' },
-  { field: 'merchant', label: 'Merchant' },
-  { field: 'category', label: 'Category' },
-  { field: 'amount', label: 'Amount', align: 'right' },
-  { field: 'originalStatement', label: 'Statement' },
-  { field: 'notes', label: 'Notes' },
-  { field: 'tags', label: 'Tags' },
-  { field: 'owner', label: 'Owner' },
-  { field: 'ignored', label: 'Ignored' },
+  { field: 'date', label: 'Date', kind: 'date' },
+  { field: 'account', label: 'Account', kind: 'text' },
+  { field: 'merchant', label: 'Merchant', kind: 'text' },
+  { field: 'category', label: 'Category', kind: 'text' },
+  { field: 'amount', label: 'Amount', kind: 'number', align: 'right' },
+  { field: 'originalStatement', label: 'Statement', kind: 'text' },
+  { field: 'notes', label: 'Notes', kind: 'text' },
+  { field: 'tags', label: 'Tags', kind: 'text' },
+  { field: 'owner', label: 'Owner', kind: 'text' },
+  { field: 'ignored', label: 'Ignored', kind: 'boolean' },
 ]
 
 function formatDate(iso: string): string {
@@ -80,6 +83,7 @@ export function Grid({
   const scrollRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
+  const [sort, setSort] = useState<SortState[]>([])
 
   useLayoutEffect(() => {
     const el = scrollRef.current
@@ -90,6 +94,31 @@ export function Grid({
     return () => window.removeEventListener('resize', measure)
   }, [])
 
+  const order = useMemo(() => {
+    if (sort.length === 0) return null
+    const criteria = sort.map((s) => {
+      const col = COLUMNS.find((c) => c.field === s.field)
+      return { ...s, kind: col?.kind ?? 'text' }
+    })
+    return computeSortOrder(records, criteria)
+  }, [records, sort])
+
+  // Cycle a column: not sorted -> ascending -> descending -> removed.
+  // Adding a column appends it as the lowest sort priority; toggling an
+  // existing column's direction leaves its priority unchanged.
+  function cycleSort(field: ColumnField): void {
+    setSort((prev) => {
+      const idx = prev.findIndex((s) => s.field === field)
+      if (idx === -1) return [...prev, { field, direction: 'asc' }]
+      if (prev[idx].direction === 'asc') {
+        const next = prev.slice()
+        next[idx] = { field, direction: 'desc' }
+        return next
+      }
+      return prev.filter((_, i) => i !== idx)
+    })
+  }
+
   const { first, last } = computeVisibleRange(
     scrollTop,
     viewportHeight,
@@ -99,11 +128,12 @@ export function Grid({
   )
 
   const rows: JSX.Element[] = []
-  for (let i = first; i < last; i++) {
+  for (let v = first; v < last; v++) {
+    const i = order ? order[v] : v
     rows.push(
       <Row
         key={i}
-        index={i}
+        top={v * ROW_HEIGHT}
         record={records[i]}
         onSetField={(field, value) => onSetField(i, field, value)}
         onRemoveOverride={(field) => onRemoveOverride(i, field)}
@@ -120,14 +150,33 @@ export function Grid({
       onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
     >
       <div className="grid-header">
-        {COLUMNS.map((col) => (
-          <div
-            key={col.field}
-            className={`header-cell${col.align === 'right' ? ' header-cell-amount' : ''}`}
-          >
-            {col.label}
-          </div>
-        ))}
+        {COLUMNS.map((col) => {
+          const sortIndex = sort.findIndex((s) => s.field === col.field)
+          const active = sortIndex !== -1
+          const dir = active ? sort[sortIndex].direction : null
+          const icon = !active ? '⇅' : dir === 'asc' ? '▲' : '▼'
+          const state = !active ? 'none' : dir === 'asc' ? 'ascending' : 'descending'
+          return (
+            <div
+              key={col.field}
+              className={`header-cell${col.align === 'right' ? ' header-cell-amount' : ''}`}
+            >
+              <span className="header-label">{col.label}</span>
+              <button
+                type="button"
+                className={`sort-btn${active ? ' sort-btn-active' : ''}`}
+                onClick={() => cycleSort(col.field)}
+                title={`Sort by ${col.label} (currently ${state})`}
+                aria-label={`Sort by ${col.label}, currently ${state}`}
+              >
+                {active && sort.length > 1 && (
+                  <span className="sort-priority">{sortIndex + 1}</span>
+                )}
+                {icon}
+              </button>
+            </div>
+          )
+        })}
         <div className="header-cell" aria-label="Delete" />
       </div>
       <div
@@ -141,7 +190,7 @@ export function Grid({
 }
 
 interface RowProps {
-  index: number
+  top: number
   record: TransactionRecord
   onSetField: (field: EditableField, value: OriginalTransaction[EditableField]) => void
   onRemoveOverride: (field: EditableField) => void
@@ -150,7 +199,7 @@ interface RowProps {
 }
 
 function Row({
-  index,
+  top,
   record,
   onSetField,
   onRemoveOverride,
@@ -158,7 +207,7 @@ function Row({
   onDelete,
 }: RowProps): JSX.Element {
   return (
-    <div className="grid-row" style={{ top: index * ROW_HEIGHT }}>
+    <div className="grid-row" style={{ top }}>
       {COLUMNS.map((col) => (
         <Cell
           key={col.field}
