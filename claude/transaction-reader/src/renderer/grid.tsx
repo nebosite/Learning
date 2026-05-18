@@ -3,7 +3,7 @@ import type { OriginalTransaction, TransactionRecord } from '../shared/types'
 import { effectiveValue } from '../shared/records'
 import { computeVisibleRange } from './virtual'
 import { computeSortOrder } from './sort'
-import type { ColumnKind, SortState } from './sort'
+import type { ColumnKind, SortCriterion, SortState } from './sort'
 import { amountInRange, dateInRange, recordMatchesFilter } from './filter'
 import './grid.css'
 
@@ -78,6 +78,8 @@ function parseBound(value: string): number | null {
 interface GridProps {
   records: TransactionRecord[]
   categories: string[]
+  /** Whether the transactions tab is currently showing. */
+  active: boolean
   onSetField: (
     index: number,
     field: EditableField,
@@ -91,6 +93,7 @@ interface GridProps {
 export function Grid({
   records,
   categories,
+  active,
   onSetField,
   onRemoveOverride,
   onToggleIgnored,
@@ -99,6 +102,10 @@ export function Grid({
   const scrollRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
+  // The record at the top of the viewport, remembered so the scroll position
+  // survives filter/sort changes and tab switches. `offset` is the partial
+  // row scrolled past, so restoration is pixel-exact when the row still shows.
+  const anchorRef = useRef<{ record: number; offset: number } | null>(null)
   const [sort, setSort] = useState<SortState[]>([])
   const [filter, setFilter] = useState('')
   const [dateFrom, setDateFrom] = useState('')
@@ -113,7 +120,11 @@ export function Grid({
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    const measure = (): void => setViewportHeight(el.clientHeight)
+    // Ignore zero heights: the scroll container reports 0 while its tab is
+    // hidden, which would otherwise corrupt the virtualization window.
+    const measure = (): void => {
+      if (el.clientHeight > 0) setViewportHeight(el.clientHeight)
+    }
     measure()
     window.addEventListener('resize', measure)
     return () => window.removeEventListener('resize', measure)
@@ -129,6 +140,14 @@ export function Grid({
     maxBound !== null ||
     fromBound !== null ||
     toBound !== null
+
+  // The active sort criteria paired with each column's data type.
+  function sortCriteria(): SortCriterion[] {
+    return sort.map((s) => {
+      const col = COLUMNS.find((c) => c.field === s.field)
+      return { ...s, kind: col?.kind ?? 'text' }
+    })
+  }
 
   // `order` is the list of original record indices to display, after
   // filtering and sorting. `null` means "show every record in its natural
@@ -148,21 +167,73 @@ export function Grid({
           return acc
         }, [])
     if (sort.length === 0) return filtered
-    const criteria = sort.map((s) => {
-      const col = COLUMNS.find((c) => c.field === s.field)
-      return { ...s, kind: col?.kind ?? 'text' }
-    })
-    return computeSortOrder(records, criteria, filtered ?? undefined)
+    return computeSortOrder(records, sortCriteria(), filtered ?? undefined)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [records, sort, filter, filtersActive, minBound, maxBound, fromBound, toBound])
 
   const displayCount = order ? order.length : records.length
 
-  // A shorter list (a new or tightened filter) can leave the prior scroll
-  // position past the end; jump back to the top so the window stays valid.
-  useEffect(() => {
-    setScrollTop(0)
-    if (scrollRef.current) scrollRef.current.scrollTop = 0
-  }, [filter, dateFrom, dateTo, amountMin, amountMax])
+  // Record the top-of-viewport row as the scroll anchor on every scroll.
+  function handleScroll(top: number): void {
+    setScrollTop(top)
+    if (displayCount === 0) {
+      anchorRef.current = null
+      return
+    }
+    const topView = Math.min(
+      displayCount - 1,
+      Math.max(0, Math.floor(top / ROW_HEIGHT)),
+    )
+    anchorRef.current = {
+      record: order ? order[topView] : topView,
+      offset: top - topView * ROW_HEIGHT,
+    }
+  }
+
+  // Scroll back to the anchored record. If it was filtered out, land on the
+  // next still-visible record in sort order instead.
+  function restoreScroll(): void {
+    const el = scrollRef.current
+    const anchor = anchorRef.current
+    if (!el || !anchor || displayCount === 0) return
+
+    let viewPos: number
+    if (!order) {
+      viewPos = anchor.record
+    } else {
+      const orderPos = new Map<number, number>()
+      order.forEach((rec, i) => orderPos.set(rec, i))
+      const direct = orderPos.get(anchor.record)
+      if (direct !== undefined) {
+        viewPos = direct
+      } else {
+        const sortedAll = computeSortOrder(records, sortCriteria())
+        const rank = sortedAll.indexOf(anchor.record)
+        viewPos = displayCount - 1
+        for (let r = rank + 1; r < sortedAll.length; r++) {
+          const p = orderPos.get(sortedAll[r])
+          if (p !== undefined) {
+            viewPos = p
+            break
+          }
+        }
+      }
+    }
+    viewPos = Math.max(0, Math.min(viewPos, displayCount - 1))
+    el.scrollTop = viewPos * ROW_HEIGHT + anchor.offset
+    setScrollTop(el.scrollTop)
+  }
+
+  // Restore the remembered scroll position when the tab becomes active or the
+  // filter/sort changes. (Edits are intentionally excluded — `records` is not
+  // a dependency — so editing a cell never moves the scroll.)
+  useLayoutEffect(() => {
+    if (!active) return
+    const el = scrollRef.current
+    if (el && el.clientHeight > 0) setViewportHeight(el.clientHeight)
+    restoreScroll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, filter, dateFrom, dateTo, amountMin, amountMax, sort])
 
   function clearFilters(): void {
     setFilter('')
@@ -329,7 +400,7 @@ export function Grid({
       <div
         className="grid-scroll"
         ref={scrollRef}
-        onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+        onScroll={(e) => handleScroll(e.currentTarget.scrollTop)}
       >
         <div className="grid-header">
         {COLUMNS.map((col) => {

@@ -188,60 +188,62 @@ export default function App(): JSX.Element {
         </button>
       </div>
 
-      {view === 'transactions' ? (
-        <div className="tab-panel">
-          <div className="toolbar">
-            <button onClick={handleImport}>Import</button>
-            <button onClick={handleSave} disabled={!dirty}>
-              {dirty ? 'Save *' : 'Save'}
-            </button>
-            <button
-              className="icon-btn"
-              onClick={undo}
-              disabled={history.past.length === 0}
-              title="Undo (Ctrl+Z)"
-              aria-label="Undo"
-            >
-              ↶
-            </button>
-            <button
-              className="icon-btn"
-              onClick={redo}
-              disabled={history.future.length === 0}
-              title="Redo (Ctrl+Shift+Z)"
-              aria-label="Redo"
-            >
-              ↷
-            </button>
-            <span className="record-count">
-              {history.present.length} records{dirty ? ' (unsaved changes)' : ''}
-            </span>
-          </div>
-          {lastImport && (
-            <p className="import-status">
-              Last import: {lastImport.added} added, {lastImport.skipped} skipped,{' '}
-              {lastImport.autoIgnored} auto-ignored, {lastImport.parseErrors.length} parse
-              errors.
-            </p>
-          )}
-          <Grid
-            records={history.present}
-            categories={categories}
-            onSetField={handleSetField}
-            onRemoveOverride={handleRemoveOverride}
-            onToggleIgnored={handleToggleIgnored}
-            onDelete={handleDelete}
-          />
+      {/* Both panels stay mounted so the grid keeps its filter, sort, and
+          scroll position when the user switches tabs. */}
+      <div
+        className={`tab-panel${view !== 'transactions' ? ' tab-panel-hidden' : ''}`}
+      >
+        <div className="toolbar">
+          <button onClick={handleImport}>Import</button>
+          <button onClick={handleSave} disabled={!dirty}>
+            {dirty ? 'Save *' : 'Save'}
+          </button>
+          <button
+            className="icon-btn"
+            onClick={undo}
+            disabled={history.past.length === 0}
+            title="Undo (Ctrl+Z)"
+            aria-label="Undo"
+          >
+            ↶
+          </button>
+          <button
+            className="icon-btn"
+            onClick={redo}
+            disabled={history.future.length === 0}
+            title="Redo (Ctrl+Shift+Z)"
+            aria-label="Redo"
+          >
+            ↷
+          </button>
+          <span className="record-count">
+            {history.present.length} records{dirty ? ' (unsaved changes)' : ''}
+          </span>
         </div>
-      ) : (
-        <div className="tab-panel">
-          <SettingsView
-            categories={categories}
-            onAddCategory={handleAddCategory}
-            onDeleteCategory={handleDeleteCategory}
-          />
-        </div>
-      )}
+        {lastImport && (
+          <p className="import-status">
+            Last import: {lastImport.added} added, {lastImport.skipped} skipped,{' '}
+            {lastImport.autoIgnored} auto-ignored, {lastImport.parseErrors.length} parse
+            errors.
+          </p>
+        )}
+        <Grid
+          records={history.present}
+          categories={categories}
+          active={view === 'transactions'}
+          onSetField={handleSetField}
+          onRemoveOverride={handleRemoveOverride}
+          onToggleIgnored={handleToggleIgnored}
+          onDelete={handleDelete}
+        />
+      </div>
+      <div className={`tab-panel${view !== 'settings' ? ' tab-panel-hidden' : ''}`}>
+        <SettingsView
+          categories={categories}
+          onAddCategory={handleAddCategory}
+          onDeleteCategory={handleDeleteCategory}
+        />
+      </div>
     </div>
   )
 }
