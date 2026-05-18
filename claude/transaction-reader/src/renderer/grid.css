@@ -20,6 +20,11 @@
   font-size: 13px;
 }
 
+/* Suppress text selection while drag-copying a cell value. */
+.grid-dragging {
+  user-select: none;
+}
+
 .grid-filter {
   display: flex;
   align-items: center;
@@ -110,7 +115,7 @@
 }
 
 .header-cell {
-  height: 30px;
+  height: 21px;
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -170,7 +175,7 @@
   position: absolute;
   left: 0;
   right: 0;
-  height: 30px;
+  height: 21px;
   display: grid;
   grid-template-columns: var(--grid-template);
 }
@@ -182,12 +187,12 @@
 }
 
 .cell {
-  height: 30px;
+  height: 21px;
   box-sizing: border-box;
   display: flex;
   align-items: center;
   padding: 0 8px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid #ccc;
   position: relative;
 }
 
@@ -218,6 +223,24 @@
 
 .cell-ignored {
   color: #999;
+  /* Gray fill about half as dark as the #999 text (half the distance from white). */
+  background: #e5e5e5;
+}
+
+/* Cells spanned by an in-progress drag-copy. */
+.cell-fill-target {
+  box-shadow: inset 0 0 0 2px #93c5fd;
+}
+
+/* The drag-copy handle: a small blue square in each cell's lower-right corner. */
+.fill-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 5px;
+  height: 5px;
+  background: #93c5fd;
+  cursor: ns-resize;
 }
 
 .cell-editing {

@@ -5,6 +5,7 @@ import type {
   TransactionOverrides,
   TransactionRecord,
 } from '../shared/types'
+import { effectiveValue } from '../shared/records'
 import { Grid } from './grid'
 import { SettingsView } from './settings'
 import './app.css'
@@ -157,6 +158,45 @@ export default function App(): JSX.Element {
     apply((prev) => prev.filter((_, i) => i !== index))
   }
 
+  // Drag-copy: write the source cell's value into every target record, as a
+  // single undoable change.
+  function handleFill(
+    sourceIndex: number,
+    targetIndices: number[],
+    field: keyof OriginalTransaction | 'ignored',
+  ): void {
+    apply((prev) => {
+      const source = prev[sourceIndex]
+      if (!source) return prev
+      const next = prev.slice()
+      if (field === 'ignored') {
+        for (const i of targetIndices) {
+          if (next[i]) next[i] = { ...next[i], ignored: source.ignored }
+        }
+        return next
+      }
+      const val = effectiveValue(source, field)
+      for (const i of targetIndices) {
+        const r = next[i]
+        if (!r) continue
+        const newOverrides: TransactionOverrides = { ...r.overrides }
+        if (val === r.original[field]) {
+          delete newOverrides[field]
+        } else {
+          ;(newOverrides as Record<string, unknown>)[field] = val
+        }
+        next[i] = { ...r, overrides: newOverrides }
+      }
+      return next
+    })
+    // A filled-in category that isn't already known becomes a new category.
+    if (field === 'category') {
+      const source = history.present[sourceIndex]
+      const name = source ? String(effectiveValue(source, 'category')).trim() : ''
+      if (name !== '') handleAddCategory(name)
+    }
+  }
+
   function persistCategories(next: string[]): void {
     setCategories(next)
     void window.api.saveCategories(next)
@@ -235,6 +275,7 @@ export default function App(): JSX.Element {
           onRemoveOverride={handleRemoveOverride}
           onToggleIgnored={handleToggleIgnored}
           onDelete={handleDelete}
+          onFill={handleFill}
         />
       </div>
       <div className={`tab-panel${view !== 'settings' ? ' tab-panel-hidden' : ''}`}>

@@ -7,8 +7,25 @@ import type { ColumnKind, SortCriterion, SortState } from './sort'
 import { amountInRange, dateInRange, recordMatchesFilter } from './filter'
 import './grid.css'
 
-const ROW_HEIGHT = 30
+const ROW_HEIGHT = 21
 const OVERSCAN = 8
+/** Height of the sticky header, subtracted when mapping a cursor Y to a row. */
+const HEADER_HEIGHT = 21
+/** Distance from a viewport edge at which a drag starts auto-scrolling. */
+const AUTO_SCROLL_EDGE = 22
+/** Pixels scrolled per auto-scroll tick while drag-copying near an edge. */
+const AUTO_SCROLL_STEP = 12
+
+/** An in-progress drag-copy ("fill") from a source cell down/up a column. */
+interface FillDrag {
+  field: ColumnField
+  /** Original record index of the source cell. */
+  sourceRecord: number
+  /** Display position of the source cell. */
+  sourceView: number
+  /** Display position currently under the cursor. */
+  currentView: number
+}
 
 type EditableField = keyof OriginalTransaction
 type ColumnField = EditableField | 'ignored'
@@ -88,6 +105,8 @@ interface GridProps {
   onRemoveOverride: (index: number, field: EditableField) => void
   onToggleIgnored: (index: number) => void
   onDelete: (index: number) => void
+  /** Copy the source cell's value into every target record for `field`. */
+  onFill: (sourceIndex: number, targetIndices: number[], field: ColumnField) => void
 }
 
 export function Grid({
@@ -98,10 +117,20 @@ export function Grid({
   onRemoveOverride,
   onToggleIgnored,
   onDelete,
+  onFill,
 }: GridProps): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
+  // The active drag-copy, or null. Mirrored to a ref for window listeners.
+  const [drag, setDrag] = useState<FillDrag | null>(null)
+  const dragRef = useRef<FillDrag | null>(null)
+  dragRef.current = drag
+  // Latest cursor Y and derived values the drag listeners read without
+  // re-subscribing on every render.
+  const pointerYRef = useRef(0)
+  const orderRef = useRef<number[] | null>(null)
+  const displayCountRef = useRef(0)
   // The record at the top of the viewport, remembered so the scroll position
   // survives filter/sort changes and tab switches. `offset` is the partial
   // row scrolled past, so restoration is pixel-exact when the row still shows.
@@ -172,6 +201,83 @@ export function Grid({
   }, [records, sort, filter, filtersActive, minBound, maxBound, fromBound, toBound])
 
   const displayCount = order ? order.length : records.length
+
+  // Mirror render-derived values so the window-level drag listeners can read
+  // the latest without being re-subscribed on every render.
+  orderRef.current = order
+  displayCountRef.current = displayCount
+
+  // Map a cursor Y position to the display row under it (clamped to range).
+  function viewPosFromY(clientY: number): number {
+    const el = scrollRef.current
+    if (!el) return 0
+    const rect = el.getBoundingClientRect()
+    const contentY = clientY - rect.top - HEADER_HEIGHT + el.scrollTop
+    const v = Math.floor(contentY / ROW_HEIGHT)
+    return Math.max(0, Math.min(v, displayCountRef.current - 1))
+  }
+
+  // Begin a drag-copy from the fill handle of the given cell.
+  function startFill(
+    field: ColumnField,
+    sourceRecord: number,
+    sourceView: number,
+    clientY: number,
+  ): void {
+    pointerYRef.current = clientY
+    setDrag({ field, sourceRecord, sourceView, currentView: sourceView })
+  }
+
+  // Finish a drag-copy: copy the source value into every spanned record.
+  function finishFill(): void {
+    const d = dragRef.current
+    setDrag(null)
+    if (!d) return
+    const lo = Math.min(d.sourceView, d.currentView)
+    const hi = Math.max(d.sourceView, d.currentView)
+    const ord = orderRef.current
+    const targets: number[] = []
+    for (let v = lo; v <= hi; v++) {
+      if (v === d.sourceView) continue
+      targets.push(ord ? ord[v] : v)
+    }
+    if (targets.length > 0) onFill(d.sourceRecord, targets, d.field)
+  }
+
+  // While a drag is active, track the cursor and auto-scroll near the edges.
+  const dragging = drag !== null
+  useEffect(() => {
+    if (!dragging) return
+    function onMouseMove(e: MouseEvent): void {
+      pointerYRef.current = e.clientY
+      const v = viewPosFromY(e.clientY)
+      setDrag((d) => (d && d.currentView !== v ? { ...d, currentView: v } : d))
+    }
+    function onMouseUp(): void {
+      finishFill()
+    }
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+    const timer = window.setInterval(() => {
+      const el = scrollRef.current
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      const y = pointerYRef.current
+      let delta = 0
+      if (y < rect.top + HEADER_HEIGHT + AUTO_SCROLL_EDGE) delta = -AUTO_SCROLL_STEP
+      else if (y > rect.bottom - AUTO_SCROLL_EDGE) delta = AUTO_SCROLL_STEP
+      if (delta === 0) return
+      el.scrollTop += delta
+      const v = viewPosFromY(y)
+      setDrag((d) => (d && d.currentView !== v ? { ...d, currentView: v } : d))
+    }, 30)
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+      window.clearInterval(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragging])
 
   // Record the top-of-viewport row as the scroll anchor on every scroll.
   function handleScroll(top: number): void {
@@ -310,9 +416,13 @@ export function Grid({
     OVERSCAN,
   )
 
+  const fillLo = drag ? Math.min(drag.sourceView, drag.currentView) : -1
+  const fillHi = drag ? Math.max(drag.sourceView, drag.currentView) : -1
+
   const rows: JSX.Element[] = []
   for (let v = first; v < last; v++) {
     const i = order ? order[v] : v
+    const inFillRange = drag !== null && v >= fillLo && v <= fillHi
     rows.push(
       <Row
         key={i}
@@ -320,6 +430,8 @@ export function Grid({
         record={records[i]}
         categories={categories}
         editingField={editing && editing.row === i ? editing.field : null}
+        fillField={inFillRange ? drag.field : null}
+        onFillStart={(field, clientY) => startFill(field, i, v, clientY)}
         onStartEdit={(field) => setEditing({ row: i, field })}
         onSave={(field, value, advance) => commitEdit(i, field, value, advance)}
         onCancelEdit={() => setEditing(null)}
@@ -398,7 +510,7 @@ export function Grid({
         )}
       </div>
       <div
-        className="grid-scroll"
+        className={`grid-scroll${dragging ? ' grid-dragging' : ''}`}
         ref={scrollRef}
         onScroll={(e) => handleScroll(e.currentTarget.scrollTop)}
       >
@@ -445,6 +557,9 @@ interface RowProps {
   record: TransactionRecord
   categories: string[]
   editingField: EditableField | null
+  /** The column highlighted by an in-progress drag-copy on this row, or null. */
+  fillField: ColumnField | null
+  onFillStart: (field: ColumnField, clientY: number) => void
   onStartEdit: (field: EditableField) => void
   onSave: (
     field: EditableField,
@@ -463,6 +578,8 @@ function Row({
   record,
   categories,
   editingField,
+  fillField,
+  onFillStart,
   onStartEdit,
   onSave,
   onCancelEdit,
@@ -483,6 +600,8 @@ function Row({
           column={col}
           categories={categories}
           editing={editingField === col.field}
+          fillHighlight={fillField === col.field}
+          onFillStart={onFillStart}
           onStartEdit={onStartEdit}
           onSave={onSave}
           onCancelEdit={onCancelEdit}
@@ -511,6 +630,9 @@ interface CellProps {
   column: Column
   categories: string[]
   editing: boolean
+  /** Whether this cell is inside an in-progress drag-copy selection. */
+  fillHighlight: boolean
+  onFillStart: (field: ColumnField, clientY: number) => void
   onStartEdit: (field: EditableField) => void
   onSave: (
     field: EditableField,
@@ -523,11 +645,35 @@ interface CellProps {
   onToggleIgnored: () => void
 }
 
+/** Small blue square in a cell's lower-right corner that begins a drag-copy. */
+function FillHandle({
+  field,
+  onFillStart,
+}: {
+  field: ColumnField
+  onFillStart: (field: ColumnField, clientY: number) => void
+}): JSX.Element {
+  return (
+    <div
+      className="fill-handle"
+      aria-hidden="true"
+      onMouseDown={(e) => {
+        e.stopPropagation()
+        e.preventDefault()
+        onFillStart(field, e.clientY)
+      }}
+      onClick={(e) => e.stopPropagation()}
+    />
+  )
+}
+
 function Cell({
   record,
   column,
   categories,
   editing,
+  fillHighlight,
+  onFillStart,
   onStartEdit,
   onSave,
   onCancelEdit,
@@ -542,7 +688,9 @@ function Cell({
 
   if (column.field === 'ignored') {
     return (
-      <div className={`cell${isIgnoredRow ? ' cell-ignored' : ''}`}>
+      <div
+        className={`cell${isIgnoredRow ? ' cell-ignored' : ''}${fillHighlight ? ' cell-fill-target' : ''}`}
+      >
         <input
           type="checkbox"
           className="cell-ignore-check"
@@ -550,6 +698,7 @@ function Cell({
           onChange={onToggleIgnored}
           aria-label="Ignored"
         />
+        <FillHandle field={column.field} onFillStart={onFillStart} />
       </div>
     )
   }
@@ -587,6 +736,7 @@ function Cell({
   if (column.align === 'right') classes.push('cell-amount')
   if (isIgnoredRow) classes.push('cell-ignored')
   if (overridden) classes.push('cell-overridden')
+  if (fillHighlight) classes.push('cell-fill-target')
   if (field === 'amount' && typeof value === 'number' && value < 0) {
     classes.push('cell-negative')
   }
@@ -618,6 +768,7 @@ function Cell({
           </button>
         </div>
       )}
+      <FillHandle field={column.field} onFillStart={onFillStart} />
     </div>
   )
 }
