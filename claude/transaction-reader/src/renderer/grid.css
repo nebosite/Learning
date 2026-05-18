@@ -1,15 +1,15 @@
 .grid-scroll {
   --grid-template:
+    90px                /* Ignored */
     100px               /* Date */
     minmax(140px, 1fr)  /* Account */
     minmax(120px, 1fr)  /* Merchant */
     minmax(120px, 1fr)  /* Category */
     100px               /* Amount */
-    minmax(160px, 2fr)  /* Statement */
-    minmax(140px, 2fr)  /* Notes */
-    minmax(80px, 1fr)   /* Tags */
+    minmax(260px, 3fr)  /* Statement */
+    minmax(100px, 1fr)  /* Notes */
+    minmax(50px, 1fr)   /* Tags */
     100px               /* Owner */
-    70px                /* Ignored */
     36px;               /* Delete */
   --grid-min-width: 1166px;
   height: calc(100vh - 180px);

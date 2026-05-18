@@ -21,6 +21,7 @@ interface Column {
 }
 
 const COLUMNS: Column[] = [
+  { field: 'ignored', label: 'Ignored', kind: 'boolean' },
   { field: 'date', label: 'Date', kind: 'date' },
   { field: 'account', label: 'Account', kind: 'text' },
   { field: 'merchant', label: 'Merchant', kind: 'text' },
@@ -30,7 +31,6 @@ const COLUMNS: Column[] = [
   { field: 'notes', label: 'Notes', kind: 'text' },
   { field: 'tags', label: 'Tags', kind: 'text' },
   { field: 'owner', label: 'Owner', kind: 'text' },
-  { field: 'ignored', label: 'Ignored', kind: 'boolean' },
 ]
 
 /** Columns the free-text filter searches: every text-valued column. */
