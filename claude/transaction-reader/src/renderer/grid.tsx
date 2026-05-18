@@ -105,8 +105,10 @@ export function Grid({
   const [dateTo, setDateTo] = useState('')
   const [amountMin, setAmountMin] = useState('')
   const [amountMax, setAmountMax] = useState('')
-  // Original record index whose category cell is being edited, or null.
-  const [editingCategory, setEditingCategory] = useState<number | null>(null)
+  // The cell currently being edited (original record index + field), or null.
+  const [editing, setEditing] = useState<{ row: number; field: EditableField } | null>(
+    null,
+  )
 
   useLayoutEffect(() => {
     const el = scrollRef.current
@@ -182,19 +184,35 @@ export function Grid({
     }
   }
 
-  // Commit a category edit. On Enter (`advance`), move the editor down to the
-  // next transaction in the displayed order; otherwise just close the editor.
-  function handleCategoryCommit(recordIndex: number, value: string, advance: boolean): void {
-    const v = value.trim()
-    if (v !== '') onSetField(recordIndex, 'category', v)
+  // The original record index `delta` display rows away from `recordIndex`,
+  // or null when that would fall outside the list. Scrolls it into view.
+  function relativeRecord(recordIndex: number, delta: number): number | null {
     const curView = order ? order.indexOf(recordIndex) : recordIndex
-    const nextView = curView + 1
-    if (!advance || curView < 0 || nextView >= displayCount) {
-      setEditingCategory(null)
-      return
-    }
+    if (curView < 0) return null
+    const nextView = curView + delta
+    if (nextView < 0 || nextView >= displayCount) return null
     ensureRowVisible(nextView)
-    setEditingCategory(order ? order[nextView] : nextView)
+    return order ? order[nextView] : nextView
+  }
+
+  // Save an edited cell. On Enter (`advance`), move the editor down to the same
+  // field of the next transaction; otherwise just close the editor.
+  function commitEdit(
+    row: number,
+    field: EditableField,
+    value: OriginalTransaction[EditableField],
+    advance: boolean,
+  ): void {
+    onSetField(row, field, value)
+    const next = advance ? relativeRecord(row, 1) : null
+    setEditing(next === null ? null : { row: next, field })
+  }
+
+  // Abandon the current edit (no save) and move the editor to the same field
+  // of the previous (`delta` -1) or next (`delta` +1) transaction.
+  function moveEdit(row: number, field: EditableField, delta: -1 | 1): void {
+    const target = relativeRecord(row, delta)
+    setEditing(target === null ? null : { row: target, field })
   }
 
   // Cycle a column: not sorted -> ascending -> descending -> removed.
@@ -230,11 +248,11 @@ export function Grid({
         top={v * ROW_HEIGHT}
         record={records[i]}
         categories={categories}
-        categoryEditing={editingCategory === i}
-        onCategoryStartEdit={() => setEditingCategory(i)}
-        onCategoryCommit={(value, advance) => handleCategoryCommit(i, value, advance)}
-        onCategoryCancel={() => setEditingCategory(null)}
-        onSetField={(field, value) => onSetField(i, field, value)}
+        editingField={editing && editing.row === i ? editing.field : null}
+        onStartEdit={(field) => setEditing({ row: i, field })}
+        onSave={(field, value, advance) => commitEdit(i, field, value, advance)}
+        onCancelEdit={() => setEditing(null)}
+        onMove={(field, delta) => moveEdit(i, field, delta)}
         onRemoveOverride={(field) => onRemoveOverride(i, field)}
         onToggleIgnored={() => onToggleIgnored(i)}
         onDelete={() => onDelete(i)}
@@ -355,11 +373,15 @@ interface RowProps {
   top: number
   record: TransactionRecord
   categories: string[]
-  categoryEditing: boolean
-  onCategoryStartEdit: () => void
-  onCategoryCommit: (value: string, advance: boolean) => void
-  onCategoryCancel: () => void
-  onSetField: (field: EditableField, value: OriginalTransaction[EditableField]) => void
+  editingField: EditableField | null
+  onStartEdit: (field: EditableField) => void
+  onSave: (
+    field: EditableField,
+    value: OriginalTransaction[EditableField],
+    advance: boolean,
+  ) => void
+  onCancelEdit: () => void
+  onMove: (field: EditableField, delta: -1 | 1) => void
   onRemoveOverride: (field: EditableField) => void
   onToggleIgnored: () => void
   onDelete: () => void
@@ -369,18 +391,18 @@ function Row({
   top,
   record,
   categories,
-  categoryEditing,
-  onCategoryStartEdit,
-  onCategoryCommit,
-  onCategoryCancel,
-  onSetField,
+  editingField,
+  onStartEdit,
+  onSave,
+  onCancelEdit,
+  onMove,
   onRemoveOverride,
   onToggleIgnored,
   onDelete,
 }: RowProps): JSX.Element {
   return (
     <div
-      className={`grid-row${categoryEditing ? ' grid-row-editing' : ''}`}
+      className={`grid-row${editingField === 'category' ? ' grid-row-editing' : ''}`}
       style={{ top }}
     >
       {COLUMNS.map((col) => (
@@ -389,11 +411,11 @@ function Row({
           record={record}
           column={col}
           categories={categories}
-          categoryEditing={col.field === 'category' && categoryEditing}
-          onCategoryStartEdit={onCategoryStartEdit}
-          onCategoryCommit={onCategoryCommit}
-          onCategoryCancel={onCategoryCancel}
-          onSetField={onSetField}
+          editing={editingField === col.field}
+          onStartEdit={onStartEdit}
+          onSave={onSave}
+          onCancelEdit={onCancelEdit}
+          onMove={onMove}
           onRemoveOverride={onRemoveOverride}
           onToggleIgnored={onToggleIgnored}
         />
@@ -417,11 +439,15 @@ interface CellProps {
   record: TransactionRecord
   column: Column
   categories: string[]
-  categoryEditing: boolean
-  onCategoryStartEdit: () => void
-  onCategoryCommit: (value: string, advance: boolean) => void
-  onCategoryCancel: () => void
-  onSetField: (field: EditableField, value: OriginalTransaction[EditableField]) => void
+  editing: boolean
+  onStartEdit: (field: EditableField) => void
+  onSave: (
+    field: EditableField,
+    value: OriginalTransaction[EditableField],
+    advance: boolean,
+  ) => void
+  onCancelEdit: () => void
+  onMove: (field: EditableField, delta: -1 | 1) => void
   onRemoveOverride: (field: EditableField) => void
   onToggleIgnored: () => void
 }
@@ -430,16 +456,15 @@ function Cell({
   record,
   column,
   categories,
-  categoryEditing,
-  onCategoryStartEdit,
-  onCategoryCommit,
-  onCategoryCancel,
-  onSetField,
+  editing,
+  onStartEdit,
+  onSave,
+  onCancelEdit,
+  onMove,
   onRemoveOverride,
   onToggleIgnored,
 }: CellProps): JSX.Element {
   const [hover, setHover] = useState(false)
-  const [editing, setEditing] = useState(false)
 
   const isIgnoredRow = record.ignored
   const isCategory = column.field === 'category'
@@ -462,13 +487,14 @@ function Cell({
   const overridden = record.overrides[field] !== undefined
   const value = effectiveValue(record, field)
 
-  if (isCategory && categoryEditing) {
+  if (editing && isCategory) {
     return (
       <CategoryEditor
         initialValue={value == null ? '' : String(value)}
         categories={categories}
-        onCommit={onCategoryCommit}
-        onCancel={onCategoryCancel}
+        onSave={(v, advance) => onSave(field, v, advance)}
+        onCancel={onCancelEdit}
+        onMove={(delta) => onMove(field, delta)}
       />
     )
   }
@@ -479,11 +505,9 @@ function Cell({
         field={field}
         initialValue={value}
         align={column.align}
-        onSave={(v) => {
-          onSetField(field, v)
-          setEditing(false)
-        }}
-        onCancel={() => setEditing(false)}
+        onSave={(v, advance) => onSave(field, v, advance)}
+        onCancel={onCancelEdit}
+        onMove={(delta) => onMove(field, delta)}
       />
     )
   }
@@ -501,8 +525,7 @@ function Cell({
       className={classes.join(' ')}
       onClick={() => {
         setHover(false)
-        if (isCategory) onCategoryStartEdit()
-        else setEditing(true)
+        onStartEdit(field)
       }}
       onMouseEnter={overridden ? () => setHover(true) : undefined}
       onMouseLeave={overridden ? () => setHover(false) : undefined}
@@ -532,8 +555,11 @@ interface CellEditorProps {
   field: EditableField
   initialValue: OriginalTransaction[EditableField]
   align?: 'left' | 'right'
-  onSave: (value: OriginalTransaction[EditableField]) => void
+  /** `advance` is true when committed with Enter (move to the next row). */
+  onSave: (value: OriginalTransaction[EditableField], advance: boolean) => void
   onCancel: () => void
+  /** Abandon the edit and move to the previous (-1) or next (+1) row. */
+  onMove: (delta: -1 | 1) => void
 }
 
 function CellEditor({
@@ -542,44 +568,57 @@ function CellEditor({
   align,
   onSave,
   onCancel,
+  onMove,
 }: CellEditorProps): JSX.Element {
   const [input, setInput] = useState(() => valueToInput(initialValue))
   const inputRef = useRef<HTMLInputElement>(null)
+  // Guards against a trailing blur firing after Enter/Escape/arrow already
+  // resolved the edit (which would otherwise commit a second time).
+  const doneRef = useRef(false)
 
   useEffect(() => {
     inputRef.current?.focus()
     inputRef.current?.select()
   }, [])
 
-  function commit(): void {
+  function commit(advance: boolean): void {
+    if (doneRef.current) return
+    doneRef.current = true
     if (field === 'amount') {
       const n = Number(input)
-      if (Number.isNaN(n)) {
-        onCancel()
-        return
-      }
-      onSave(n as OriginalTransaction[EditableField])
+      if (Number.isNaN(n)) onCancel()
+      else onSave(n as OriginalTransaction[EditableField], advance)
       return
     }
-    if (field === 'date') {
-      // <input type="date"> yields '' or YYYY-MM-DD
-      if (input === '') {
-        onCancel()
-        return
-      }
-      onSave(input as OriginalTransaction[EditableField])
+    // <input type="date"> yields '' or YYYY-MM-DD
+    if (field === 'date' && input === '') {
+      onCancel()
       return
     }
-    onSave(input as OriginalTransaction[EditableField])
+    onSave(input as OriginalTransaction[EditableField], advance)
+  }
+
+  function move(delta: -1 | 1): void {
+    if (doneRef.current) return
+    doneRef.current = true
+    onMove(delta)
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>): void {
     if (e.key === 'Enter') {
       e.preventDefault()
-      commit()
+      commit(true)
     } else if (e.key === 'Escape') {
       e.preventDefault()
+      if (doneRef.current) return
+      doneRef.current = true
       onCancel()
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      move(-1)
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      move(1)
     }
   }
 
@@ -593,7 +632,7 @@ function CellEditor({
         className={`cell-edit-input${align === 'right' ? ' cell-amount' : ''}`}
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={onKeyDown}
-        onBlur={commit}
+        onBlur={() => commit(false)}
       />
     </div>
   )
@@ -603,21 +642,23 @@ interface CategoryEditorProps {
   initialValue: string
   categories: string[]
   /** `advance` is true when committed with Enter (move to the next row). */
-  onCommit: (value: string, advance: boolean) => void
+  onSave: (value: string, advance: boolean) => void
   onCancel: () => void
+  /** Abandon the edit and move to the previous (-1) or next (+1) row. */
+  onMove: (delta: -1 | 1) => void
 }
 
 function CategoryEditor({
   initialValue,
   categories,
-  onCommit,
+  onSave,
   onCancel,
+  onMove,
 }: CategoryEditorProps): JSX.Element {
   const [input, setInput] = useState(initialValue)
-  const [highlight, setHighlight] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
-  // Guards against a trailing blur firing after Enter/Escape/click already
-  // resolved the edit (which would commit or cancel a second time).
+  // Guards against a trailing blur firing after Enter/Escape/arrow/click
+  // already resolved the edit (which would commit or cancel a second time).
   const doneRef = useRef(false)
 
   useEffect(() => {
@@ -625,33 +666,33 @@ function CategoryEditor({
     inputRef.current?.select()
   }, [])
 
-  // Greedy prefix prediction: categories that start with what's typed, sorted.
+  // Prediction: categories containing what's typed anywhere, sorted.
   const matches = useMemo(() => {
     const sorted = [...categories].sort((a, b) =>
       a.toLowerCase().localeCompare(b.toLowerCase()),
     )
     const q = input.trim().toLowerCase()
-    return q === '' ? sorted : sorted.filter((c) => c.toLowerCase().startsWith(q))
+    return q === '' ? sorted : sorted.filter((c) => c.toLowerCase().includes(q))
   }, [categories, input])
 
-  const activeIndex = Math.min(highlight, Math.max(0, matches.length - 1))
-
-  // Complete to the highlighted prediction when one exists; otherwise keep
-  // exactly what was typed — that becomes a brand-new category.
+  // The value Enter commits: an exact existing category (case-insensitive)
+  // wins; otherwise the top prediction; otherwise the typed text becomes a
+  // brand-new category.
   function resolvedValue(): string {
-    return matches.length > 0 ? matches[activeIndex] : input.trim()
+    const trimmed = input.trim()
+    const exact = categories.find((c) => c.toLowerCase() === trimmed.toLowerCase())
+    if (exact) return exact
+    return matches.length > 0 ? matches[0] : trimmed
   }
+
+  const predicted = resolvedValue()
 
   function commit(advance: boolean): void {
     if (doneRef.current) return
     doneRef.current = true
-    onCommit(resolvedValue(), advance)
-  }
-
-  function cancel(): void {
-    if (doneRef.current) return
-    doneRef.current = true
-    onCancel()
+    const v = resolvedValue()
+    if (v === '') onCancel()
+    else onSave(v, advance)
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>): void {
@@ -660,13 +701,14 @@ function CategoryEditor({
       commit(true)
     } else if (e.key === 'Escape') {
       e.preventDefault()
-      cancel()
-    } else if (e.key === 'ArrowDown') {
+      if (doneRef.current) return
+      doneRef.current = true
+      onCancel()
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       e.preventDefault()
-      setHighlight(Math.min(activeIndex + 1, matches.length - 1))
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setHighlight(Math.max(activeIndex - 1, 0))
+      if (doneRef.current) return
+      doneRef.current = true
+      onMove(e.key === 'ArrowUp' ? -1 : 1)
     }
   }
 
@@ -677,24 +719,21 @@ function CategoryEditor({
         type="text"
         value={input}
         className="cell-edit-input"
-        onChange={(e) => {
-          setInput(e.target.value)
-          setHighlight(0)
-        }}
+        onChange={(e) => setInput(e.target.value)}
         onKeyDown={onKeyDown}
         onBlur={() => commit(false)}
       />
       {matches.length > 0 && (
         <div className="cat-suggest">
-          {matches.map((c, i) => (
+          {matches.map((c) => (
             <div
               key={c}
-              className={`cat-suggest-item${i === activeIndex ? ' cat-suggest-item-active' : ''}`}
+              className={`cat-suggest-item${c === predicted ? ' cat-suggest-item-active' : ''}`}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 if (doneRef.current) return
                 doneRef.current = true
-                onCommit(c, false)
+                onSave(c, false)
               }}
             >
               {c}
