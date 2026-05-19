@@ -28,6 +28,8 @@ export default function App(): JSX.Element {
   const [savedRef, setSavedRef] = useState<TransactionRecord[]>(emptyHistory.present)
   const [lastImport, setLastImport] = useState<ImportResult | null>(null)
   const [categories, setCategories] = useState<string[]>([])
+  // Bumped by the Resort button to make the grid re-sort/re-filter on demand.
+  const [resortKey, setResortKey] = useState(0)
   const dirty = history.present !== savedRef
 
   const reset = useCallback((records: TransactionRecord[]): void => {
@@ -256,6 +258,14 @@ export default function App(): JSX.Element {
           >
             ↷
           </button>
+          <button
+            className="icon-btn"
+            onClick={() => setResortKey((k) => k + 1)}
+            title="Resort and refilter"
+            aria-label="Resort and refilter"
+          >
+            ⟳
+          </button>
           <span className="record-count">
             {history.present.length} records{dirty ? ' (unsaved changes)' : ''}
           </span>
@@ -271,6 +281,7 @@ export default function App(): JSX.Element {
           records={history.present}
           categories={categories}
           active={view === 'transactions'}
+          resortKey={resortKey}
           onSetField={handleSetField}
           onRemoveOverride={handleRemoveOverride}
           onToggleIgnored={handleToggleIgnored}

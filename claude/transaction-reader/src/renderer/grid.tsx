@@ -97,6 +97,8 @@ interface GridProps {
   categories: string[]
   /** Whether the transactions tab is currently showing. */
   active: boolean
+  /** Bumped to force a resort/refilter against the current record values. */
+  resortKey: number
   onSetField: (
     index: number,
     field: EditableField,
@@ -113,6 +115,7 @@ export function Grid({
   records,
   categories,
   active,
+  resortKey,
   onSetField,
   onRemoveOverride,
   onToggleIgnored,
@@ -181,6 +184,11 @@ export function Grid({
   // `order` is the list of original record indices to display, after
   // filtering and sorting. `null` means "show every record in its natural
   // order" — the common, allocation-free case.
+  //
+  // It deliberately does NOT depend on `records`, so editing a cell never
+  // re-sorts or re-filters: the row keeps its position with the new value.
+  // It recomputes only on a sort/filter change, a resort request, or a
+  // record-count change (delete/import), where stale indices would break.
   const order = useMemo(() => {
     const trimmed = filter.trim()
     const filtered = !filtersActive
@@ -198,7 +206,17 @@ export function Grid({
     if (sort.length === 0) return filtered
     return computeSortOrder(records, sortCriteria(), filtered ?? undefined)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [records, sort, filter, filtersActive, minBound, maxBound, fromBound, toBound])
+  }, [
+    records.length,
+    resortKey,
+    sort,
+    filter,
+    filtersActive,
+    minBound,
+    maxBound,
+    fromBound,
+    toBound,
+  ])
 
   const displayCount = order ? order.length : records.length
 
@@ -331,15 +349,15 @@ export function Grid({
   }
 
   // Restore the remembered scroll position when the tab becomes active or the
-  // filter/sort changes. (Edits are intentionally excluded — `records` is not
-  // a dependency — so editing a cell never moves the scroll.)
+  // filter/sort/resort changes. (Edits are intentionally excluded — `records`
+  // is not a dependency — so editing a cell never moves the scroll.)
   useLayoutEffect(() => {
     if (!active) return
     const el = scrollRef.current
     if (el && el.clientHeight > 0) setViewportHeight(el.clientHeight)
     restoreScroll()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, filter, dateFrom, dateTo, amountMin, amountMax, sort])
+  }, [active, filter, dateFrom, dateTo, amountMin, amountMax, sort, resortKey])
 
   function clearFilters(): void {
     setFilter('')
