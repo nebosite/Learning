@@ -6,13 +6,16 @@ import type {
   TransactionRecord,
 } from '../shared/types'
 import { effectiveValue } from '../shared/records'
+import type { FilterCriteria } from './filter'
+import { EMPTY_FILTER } from './filter'
 import { Grid } from './grid'
+import { Report } from './report'
 import { SettingsView } from './settings'
 import './app.css'
 
 const MAX_HISTORY = 100
 
-type View = 'transactions' | 'settings'
+type View = 'transactions' | 'report' | 'settings'
 
 interface History {
   past: TransactionRecord[][]
@@ -30,6 +33,8 @@ export default function App(): JSX.Element {
   const [categories, setCategories] = useState<string[]>([])
   // Bumped by the Resort button to make the grid re-sort/re-filter on demand.
   const [resortKey, setResortKey] = useState(0)
+  // The transactions grid's filter, mirrored here so the Report tab shares it.
+  const [reportFilter, setReportFilter] = useState<FilterCriteria>(EMPTY_FILTER)
   const dirty = history.present !== savedRef
 
   const reset = useCallback((records: TransactionRecord[]): void => {
@@ -213,6 +218,45 @@ export default function App(): JSX.Element {
     persistCategories(categories.filter((c) => c !== name))
   }
 
+  // Shared by the Transactions and Report tabs (both edit transactions).
+  const toolbar = (
+    <div className="toolbar">
+      <button onClick={handleImport}>Import</button>
+      <button onClick={handleSave} disabled={!dirty}>
+        {dirty ? 'Save *' : 'Save'}
+      </button>
+      <button
+        className="icon-btn"
+        onClick={undo}
+        disabled={history.past.length === 0}
+        title="Undo (Ctrl+Z)"
+        aria-label="Undo"
+      >
+        ↶
+      </button>
+      <button
+        className="icon-btn"
+        onClick={redo}
+        disabled={history.future.length === 0}
+        title="Redo (Ctrl+Shift+Z)"
+        aria-label="Redo"
+      >
+        ↷
+      </button>
+      <button
+        className="icon-btn"
+        onClick={() => setResortKey((k) => k + 1)}
+        title="Resort and refilter"
+        aria-label="Resort and refilter"
+      >
+        ⟳
+      </button>
+      <span className="record-count">
+        {history.present.length} records{dirty ? ' (unsaved changes)' : ''}
+      </span>
+    </div>
+  )
+
   return (
     <div className="app">
       <div className="tabs">
@@ -223,6 +267,12 @@ export default function App(): JSX.Element {
           Transactions
         </button>
         <button
+          className={`tab${view === 'report' ? ' tab-active' : ''}`}
+          onClick={() => setView('report')}
+        >
+          Report
+        </button>
+        <button
           className={`tab${view === 'settings' ? ' tab-active' : ''}`}
           onClick={() => setView('settings')}
         >
@@ -230,46 +280,12 @@ export default function App(): JSX.Element {
         </button>
       </div>
 
-      {/* Both panels stay mounted so the grid keeps its filter, sort, and
+      {/* All panels stay mounted so each view keeps its filter, sort, and
           scroll position when the user switches tabs. */}
       <div
         className={`tab-panel${view !== 'transactions' ? ' tab-panel-hidden' : ''}`}
       >
-        <div className="toolbar">
-          <button onClick={handleImport}>Import</button>
-          <button onClick={handleSave} disabled={!dirty}>
-            {dirty ? 'Save *' : 'Save'}
-          </button>
-          <button
-            className="icon-btn"
-            onClick={undo}
-            disabled={history.past.length === 0}
-            title="Undo (Ctrl+Z)"
-            aria-label="Undo"
-          >
-            ↶
-          </button>
-          <button
-            className="icon-btn"
-            onClick={redo}
-            disabled={history.future.length === 0}
-            title="Redo (Ctrl+Shift+Z)"
-            aria-label="Redo"
-          >
-            ↷
-          </button>
-          <button
-            className="icon-btn"
-            onClick={() => setResortKey((k) => k + 1)}
-            title="Resort and refilter"
-            aria-label="Resort and refilter"
-          >
-            ⟳
-          </button>
-          <span className="record-count">
-            {history.present.length} records{dirty ? ' (unsaved changes)' : ''}
-          </span>
-        </div>
+        {toolbar}
         {lastImport && (
           <p className="import-status">
             Last import: {lastImport.added} added, {lastImport.skipped} skipped,{' '}
@@ -281,6 +297,22 @@ export default function App(): JSX.Element {
           records={history.present}
           categories={categories}
           active={view === 'transactions'}
+          resortKey={resortKey}
+          onFilterChange={setReportFilter}
+          onSetField={handleSetField}
+          onRemoveOverride={handleRemoveOverride}
+          onToggleIgnored={handleToggleIgnored}
+          onDelete={handleDelete}
+          onFill={handleFill}
+        />
+      </div>
+      <div className={`tab-panel${view !== 'report' ? ' tab-panel-hidden' : ''}`}>
+        {toolbar}
+        <Report
+          records={history.present}
+          categories={categories}
+          filter={reportFilter}
+          active={view === 'report'}
           resortKey={resortKey}
           onSetField={handleSetField}
           onRemoveOverride={handleRemoveOverride}

@@ -49,3 +49,52 @@ export function dateInRange(
   if (to !== null && date > to) return false
   return true
 }
+
+/** The five filter inputs as the raw strings the filter UI holds. */
+export interface FilterCriteria {
+  text: string
+  dateFrom: string
+  dateTo: string
+  amountMin: string
+  amountMax: string
+}
+
+export const EMPTY_FILTER: FilterCriteria = {
+  text: '',
+  dateFrom: '',
+  dateTo: '',
+  amountMin: '',
+  amountMax: '',
+}
+
+/** Parse a range-input string into a numeric bound; blank or invalid is unbounded. */
+export function parseBound(value: string): number | null {
+  const trimmed = value.trim()
+  if (trimmed === '') return null
+  const n = Number(trimmed)
+  return Number.isNaN(n) ? null : n
+}
+
+/** Whether any filter criterion is set. */
+export function isFilterActive(c: FilterCriteria): boolean {
+  return (
+    c.text.trim() !== '' ||
+    c.dateFrom !== '' ||
+    c.dateTo !== '' ||
+    parseBound(c.amountMin) !== null ||
+    parseBound(c.amountMax) !== null
+  )
+}
+
+/** Whether a record passes all of the text/date/amount filter criteria. */
+export function recordPassesFilter(
+  record: TransactionRecord,
+  c: FilterCriteria,
+  textFields: readonly (keyof OriginalTransaction)[],
+): boolean {
+  return (
+    recordMatchesFilter(record, c.text, textFields) &&
+    amountInRange(record, parseBound(c.amountMin), parseBound(c.amountMax)) &&
+    dateInRange(record, c.dateFrom || null, c.dateTo || null)
+  )
+}

@@ -4,7 +4,8 @@ import { effectiveValue } from '../shared/records'
 import { computeVisibleRange } from './virtual'
 import { computeSortOrder } from './sort'
 import type { ColumnKind, SortCriterion, SortState } from './sort'
-import { amountInRange, dateInRange, recordMatchesFilter } from './filter'
+import { isFilterActive, recordPassesFilter } from './filter'
+import type { FilterCriteria } from './filter'
 import './grid.css'
 
 const ROW_HEIGHT = 21
@@ -51,7 +52,7 @@ const COLUMNS: Column[] = [
 ]
 
 /** Columns the free-text filter searches: every text-valued column. */
-const TEXT_FIELDS: EditableField[] = COLUMNS.filter((c) => c.kind === 'text').map(
+export const TEXT_FIELDS: EditableField[] = COLUMNS.filter((c) => c.kind === 'text').map(
   (c) => c.field as EditableField,
 )
 
@@ -61,7 +62,7 @@ function formatDate(iso: string): string {
   return `${m}/${d}/${y}`
 }
 
-function formatAmount(n: number): string {
+export function formatAmount(n: number): string {
   const sign = n < 0 ? '-' : ''
   return `${sign}$${Math.abs(n).toFixed(2)}`
 }
@@ -84,21 +85,17 @@ function valueToInput(value: OriginalTransaction[EditableField]): string {
   return value == null ? '' : String(value)
 }
 
-/** Parse a range-input string into a numeric bound; blank or invalid is unbounded. */
-function parseBound(value: string): number | null {
-  const trimmed = value.trim()
-  if (trimmed === '') return null
-  const n = Number(trimmed)
-  return Number.isNaN(n) ? null : n
-}
-
 interface GridProps {
   records: TransactionRecord[]
   categories: string[]
-  /** Whether the transactions tab is currently showing. */
+  /** Whether this grid's tab is currently showing. */
   active: boolean
   /** Bumped to force a resort/refilter against the current record values. */
   resortKey: number
+  /** Show the filter bar (text/date/amount). Defaults to true. */
+  showFilter?: boolean
+  /** Called whenever the filter changes, so other views can mirror it. */
+  onFilterChange?: (filter: FilterCriteria) => void
   onSetField: (
     index: number,
     field: EditableField,
@@ -116,6 +113,8 @@ export function Grid({
   categories,
   active,
   resortKey,
+  showFilter = true,
+  onFilterChange,
   onSetField,
   onRemoveOverride,
   onToggleIgnored,
@@ -162,16 +161,19 @@ export function Grid({
     return () => window.removeEventListener('resize', measure)
   }, [])
 
-  const minBound = parseBound(amountMin)
-  const maxBound = parseBound(amountMax)
-  const fromBound = dateFrom || null
-  const toBound = dateTo || null
-  const filtersActive =
-    filter.trim() !== '' ||
-    minBound !== null ||
-    maxBound !== null ||
-    fromBound !== null ||
-    toBound !== null
+  const criteria: FilterCriteria = {
+    text: filter,
+    dateFrom,
+    dateTo,
+    amountMin,
+    amountMax,
+  }
+  const filtersActive = isFilterActive(criteria)
+
+  // Notify the app of filter changes so other views (the report) can mirror it.
+  useEffect(() => {
+    onFilterChange?.({ text: filter, dateFrom, dateTo, amountMin, amountMax })
+  }, [filter, dateFrom, dateTo, amountMin, amountMax, onFilterChange])
 
   // The active sort criteria paired with each column's data type.
   function sortCriteria(): SortCriterion[] {
@@ -190,33 +192,16 @@ export function Grid({
   // It recomputes only on a sort/filter change, a resort request, or a
   // record-count change (delete/import), where stale indices would break.
   const order = useMemo(() => {
-    const trimmed = filter.trim()
     const filtered = !filtersActive
       ? null
       : records.reduce<number[]>((acc, r, i) => {
-          if (
-            recordMatchesFilter(r, trimmed, TEXT_FIELDS) &&
-            amountInRange(r, minBound, maxBound) &&
-            dateInRange(r, fromBound, toBound)
-          ) {
-            acc.push(i)
-          }
+          if (recordPassesFilter(r, criteria, TEXT_FIELDS)) acc.push(i)
           return acc
         }, [])
     if (sort.length === 0) return filtered
     return computeSortOrder(records, sortCriteria(), filtered ?? undefined)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    records.length,
-    resortKey,
-    sort,
-    filter,
-    filtersActive,
-    minBound,
-    maxBound,
-    fromBound,
-    toBound,
-  ])
+  }, [records.length, resortKey, sort, filter, dateFrom, dateTo, amountMin, amountMax])
 
   const displayCount = order ? order.length : records.length
 
@@ -463,7 +448,8 @@ export function Grid({
 
   return (
     <div className="grid-container">
-      <div className="grid-filter">
+      {showFilter && (
+        <div className="grid-filter">
         <input
           type="text"
           className="grid-filter-input"
@@ -526,7 +512,8 @@ export function Grid({
             </button>
           </>
         )}
-      </div>
+        </div>
+      )}
       <div
         className={`grid-scroll${dragging ? ' grid-dragging' : ''}`}
         ref={scrollRef}
