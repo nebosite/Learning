@@ -27,16 +27,16 @@ const REQUIRED_HEADERS = [
 type RequiredHeader = (typeof REQUIRED_HEADERS)[number]
 
 /**
- * Parse the text of a Monarch Money TSV export.
+ * Parse the text of a Monarch Money CSV export.
  *
  * Throws if the file is empty or any required column is missing in the header
  * (those are whole-file problems, not per-row). Per-row problems (unparseable
  * date or amount) are collected as `errors` so import can continue.
  */
-export function parseMonarchTsv(text: string): ParseResult {
+export function parseMonarchCsv(text: string): ParseResult {
   const lines = text.split(/\r?\n/)
   if (lines.length === 0 || lines[0].trim() === '') {
-    throw new Error('TSV file is empty.')
+    throw new Error('CSV file is empty.')
   }
 
   const headerFields = tokenize(lines[0])
@@ -47,7 +47,7 @@ export function parseMonarchTsv(text: string): ParseResult {
 
   const missing = REQUIRED_HEADERS.filter((h) => !headerIndex.has(h))
   if (missing.length > 0) {
-    throw new Error(`TSV is missing expected column(s): ${missing.join(', ')}.`)
+    throw new Error(`CSV is missing expected column(s): ${missing.join(', ')}.`)
   }
 
   const col = (h: RequiredHeader): number => headerIndex.get(h)!
@@ -100,9 +100,9 @@ export function parseMonarchTsv(text: string): ParseResult {
 }
 
 /**
- * Tokenize one TSV line into fields. A field that starts with `"` is treated
- * as quoted: it ends at the next unescaped `"`, and `""` inside a quoted
- * field represents a literal `"` (RFC 4180 convention).
+ * Tokenize one CSV line into fields (RFC 4180). A field that starts with `"`
+ * is quoted: it ends at the next unescaped `"`, and `""` inside a quoted
+ * field represents a literal `"`. Unquoted fields end at the next comma.
  */
 function tokenize(line: string): string[] {
   const fields: string[] = []
@@ -125,15 +125,15 @@ function tokenize(line: string): string[] {
           i++
         }
       }
-      while (i < line.length && line[i] !== '\t') i++
+      while (i < line.length && line[i] !== ',') i++
     } else {
-      while (i < line.length && line[i] !== '\t') {
+      while (i < line.length && line[i] !== ',') {
         field += line[i]
         i++
       }
     }
     fields.push(field)
-    if (i < line.length && line[i] === '\t') {
+    if (i < line.length && line[i] === ',') {
       i++
     } else {
       break
@@ -143,16 +143,24 @@ function tokenize(line: string): string[] {
 }
 
 function parseDate(s: string): IsoDate | null {
-  const m = s.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
-  if (!m) return null
-  const month = m[1].padStart(2, '0')
-  const day = m[2].padStart(2, '0')
-  const year = m[3]
-  return `${year}-${month}-${day}`
+  const t = s.trim()
+  // YYYY-MM-DD — the format Monarch's CSV export actually uses.
+  const iso = t.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`
+  // M/D/YYYY — kept for hand-edited files and older exports.
+  const slash = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (slash) {
+    const month = slash[1].padStart(2, '0')
+    const day = slash[2].padStart(2, '0')
+    return `${slash[3]}-${month}-${day}`
+  }
+  return null
 }
 
 function parseAmount(s: string): number | null {
-  const trimmed = s.trim()
+  // Strip thousands-separator commas; a quoted CSV cell like "1,234.56" loses
+  // its quotes during tokenization and still arrives here with the comma.
+  const trimmed = s.trim().replace(/,/g, '')
   if (trimmed === '') return null
   const n = Number(trimmed)
   if (Number.isNaN(n)) return null

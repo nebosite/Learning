@@ -148,7 +148,7 @@ export default function App(): JSX.Element {
   }, [undo, redo])
 
   async function handleImport(): Promise<void> {
-    const result = await window.api.importTsv(history.present)
+    const result = await window.api.importCsv(history.present)
     if (!result) return
     // Make the import a single undoable step rather than overwriting history;
     // the merged records aren't on disk yet, so this leaves the doc dirty.
@@ -350,6 +350,8 @@ export default function App(): JSX.Element {
     </div>
   )
 
+  console.log(lastImport?.parseErrors);
+  
   return (
     <div className="app">
       <div className="tabs">

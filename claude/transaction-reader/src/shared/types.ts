@@ -22,7 +22,7 @@ export type TransactionOverrides = Partial<OriginalTransaction>
 /**
  * One row in the master file.
  *
- * `key` is the verbatim TSV line text from the source file and serves as the
+ * `key` is the verbatim CSV line text from the source file and serves as the
  * dedup identity — re-importing the same export produces identical keys.
  *
  * `ignored` is set once: transfer detection runs on freshly-imported records
@@ -42,7 +42,7 @@ export interface MasterFile {
   records: TransactionRecord[]
 }
 
-/** A row that could not be parsed from a TSV import. */
+/** A row that could not be parsed from a CSV import. */
 export interface ParseError {
   /** 1-based line number in the source text, matching what an editor would show. */
   lineNumber: number
@@ -50,7 +50,7 @@ export interface ParseError {
   reason: string
 }
 
-/** Outcome of a single TSV import, returned to the renderer for UI feedback. */
+/** Outcome of a single CSV import, returned to the renderer for UI feedback. */
 export interface ImportResult {
   master: MasterFile
   added: number
@@ -84,11 +84,11 @@ export type DiscardChoice = 'save' | 'discard' | 'cancel'
 
 export interface ElectronApi {
   /**
-   * Open a file picker for a Monarch TSV export and merge it into the given
+   * Open a file picker for a Monarch CSV export and merge it into the given
    * records. Returns the merged result, or null if the dialog was cancelled.
    * The renderer is responsible for persisting (no disk write happens here).
    */
-  importTsv: (
+  importCsv: (
     currentRecords: readonly TransactionRecord[],
   ) => Promise<ImportResult | null>
 

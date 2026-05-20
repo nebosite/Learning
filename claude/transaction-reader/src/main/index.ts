@@ -10,7 +10,7 @@ import type {
   TransactionRecord,
 } from '../shared/types'
 import { sortRecordsByDateDescending } from '../shared/records'
-import { importTsvFile } from './import'
+import { importCsvFile } from './import'
 import { loadMasterFile, saveMasterFile } from './master-file'
 import { loadSettings, saveSettings } from './settings-file'
 
@@ -263,16 +263,16 @@ app.whenReady().then(async () => {
   })
 
   ipcMain.handle(
-    'import-tsv',
+    'import-csv',
     async (_event, currentRecords: TransactionRecord[]): Promise<ImportResult | null> => {
       const { canceled, filePaths } = await dialog.showOpenDialog({
-        title: 'Import Monarch TSV',
-        filters: [{ name: 'TSV Files', extensions: ['tsv'] }],
+        title: 'Import Monarch CSV',
+        filters: [{ name: 'CSV Files', extensions: ['csv'] }],
         properties: ['openFile'],
       })
       if (canceled || filePaths.length === 0) return null
       const current: MasterFile = { version: 1, records: currentRecords }
-      return importTsvFile(filePaths[0], current)
+      return importCsvFile(filePaths[0], current)
     },
   )
 

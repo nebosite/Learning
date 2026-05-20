@@ -11,10 +11,10 @@ import type {
 } from '../shared/types'
 
 const api: ElectronApi = {
-  importTsv: (
+  importCsv: (
     currentRecords: readonly TransactionRecord[],
   ): Promise<ImportResult | null> =>
-    ipcRenderer.invoke('import-tsv', currentRecords),
+    ipcRenderer.invoke('import-csv', currentRecords),
 
   showOpenDialog: (): Promise<string | null> => ipcRenderer.invoke('dialog:open'),
   showSaveDialog: (defaultName?: string): Promise<string | null> =>

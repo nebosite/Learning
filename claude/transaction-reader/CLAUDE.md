@@ -21,7 +21,7 @@ Out of scope: savings accounts, installment debt, investment accounts.
 
 ### Core Capabilities
 
-1. **Load Monarch Money exports.** Files are tab-separated (`.tsv`). See `sampledata.tsv` at the repo root for an example of the columns and shape.
+1. **Load Monarch Money exports.** Files are comma-separated (`.csv`, RFC 4180). See `sampledata.csv` at the repo root for an example of the columns and shape.
 2. **Override model.** The original parsed record is preserved verbatim. The user can override any field on any record. The displayed/exported value of a field comes from the override if one exists, otherwise from the original.
 3. **Auto-ignore non-spending.** Transfers between the user's own accounts (a withdrawal on one account paired with an equal deposit on another within a few days) are detected and excluded from the spending view automatically.
 4. **Editable grid.** Transactions are shown in a large scrollable grid. The user can edit any field (creating an override) and toggle ignore/unignore on any record.
@@ -60,8 +60,8 @@ npm run test:unit <path>  # Run a single test file
 
 ### Data Flow
 
-1. User selects a Monarch Money TSV export via a file picker (renderer triggers IPC call)
-2. Main process reads and parses the TSV
+1. User selects a Monarch Money CSV export via a file picker (renderer triggers IPC call)
+2. Main process reads and parses the CSV
 3. Main process merges incoming transactions into the master record set, deduplicating against existing records
 4. Transfer detection flags non-spending records as auto-ignored
 5. The merged dataset is returned to the renderer for display and editing in the grid
@@ -69,7 +69,7 @@ npm run test:unit <path>  # Run a single test file
 
 ### Process Boundary
 
-- File I/O, TSV parsing, master-file persistence, deduplication, and transfer detection live in the **main process** (`src/main/`)
+- File I/O, CSV parsing, master-file persistence, deduplication, and transfer detection live in the **main process** (`src/main/`)
 - Display logic, editing, dirty-state tracking, and user interaction live in the **renderer** (`src/renderer/`)
 - Shared TypeScript types for transactions and IPC payloads live in **`src/shared/`**
 

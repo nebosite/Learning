@@ -7,8 +7,9 @@ result to a file you own and control.
 
 ## Features
 
-- **Import Monarch TSV exports.** Tab-separated files from Monarch Money are
-  parsed, deduplicated against your current records, and merged in.
+- **Import Monarch CSV exports.** Comma-separated files exported from
+  Monarch Money are parsed, deduplicated against your current records,
+  and merged in.
 - **Override any field.** The original parsed row is preserved verbatim;
   the displayed and exported value comes from your override when one
   exists, otherwise from the original. Hover an overridden cell to see
@@ -47,7 +48,7 @@ build/start pair.
 
 1. **Open or import.** From the File menu choose **Open…** to load an
    existing transaction file, or click **Import** to merge a Monarch
-   TSV export into the current records.
+   CSV export into the current records.
 2. **Edit.** Click a cell to edit. Enter saves and advances to the
    next row's same field; Escape cancels; ↑/↓ abandon the edit and
    jump rows. Drag the small blue square in a cell's lower-right
@@ -71,7 +72,7 @@ substring matching (case-insensitive).
 ## File format
 
 Master files are JSON with a versioned envelope; the shape is defined
-in `src/shared/types.ts`. Re-importing the same TSV is idempotent —
+in `src/shared/types.ts`. Re-importing the same CSV is idempotent —
 records are keyed on the original line text and not duplicated.
 
 ## Development
