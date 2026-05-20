@@ -1,8 +1,10 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron'
 import { join } from 'path'
 import type {
+  DiscardChoice,
   ImportResult,
   MasterFile,
+  MenuCommand,
   Settings,
   TransactionRecord,
 } from '../shared/types'
@@ -10,15 +12,14 @@ import { sortRecordsByDateDescending } from '../shared/records'
 import { importTsvFile } from './import'
 import { loadMasterFile, saveMasterFile } from './master-file'
 import { loadSettings, saveSettings } from './settings-file'
-import { makeSeedRecords } from './seed'
 
 const DEFAULT_WINDOW = { width: 1000, height: 768 }
 const MIN_WINDOW = { width: 100, height: 100 }
 const RESIZE_DEBOUNCE_MS = 400
-
-function masterFilePath(): string {
-  return join(app.getPath('userData'), 'master.json')
-}
+const MASTER_FILE_FILTERS = [
+  { name: 'Transaction Master', extensions: ['json'] },
+  { name: 'All Files', extensions: ['*'] },
+]
 
 function settingsFilePath(): string {
   return join(app.getPath('userData'), 'settings.json')
@@ -38,7 +39,51 @@ function updateSettings(mutate: (current: Settings) => Settings): Promise<void> 
   return next
 }
 
-async function createWindow(): Promise<void> {
+// Set by the renderer once the user has cleared its unsaved-changes flow.
+// The window's close event short-circuits to a real close when this is true.
+let allowClose = false
+
+function sendMenuCommand(win: BrowserWindow, command: MenuCommand): void {
+  win.webContents.send('menu:command', command)
+}
+
+function buildMenu(getActiveWindow: () => BrowserWindow | null): void {
+  const sendIfActive = (command: MenuCommand): void => {
+    const win = getActiveWindow()
+    if (win) sendMenuCommand(win, command)
+  }
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: 'File',
+      submenu: [
+        { label: 'New', accelerator: 'CmdOrCtrl+N', click: () => sendIfActive('new') },
+        {
+          label: 'Open…',
+          accelerator: 'CmdOrCtrl+O',
+          click: () => sendIfActive('open'),
+        },
+        {
+          label: 'Save',
+          accelerator: 'CmdOrCtrl+S',
+          click: () => sendIfActive('save'),
+        },
+        {
+          label: 'Save As…',
+          accelerator: 'CmdOrCtrl+Shift+S',
+          click: () => sendIfActive('save-as'),
+        },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' },
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
+async function createWindow(): Promise<BrowserWindow> {
   const settings = await loadSettings(settingsFilePath())
 
   const win = new BrowserWindow({
@@ -49,8 +94,8 @@ async function createWindow(): Promise<void> {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      nodeIntegration: false
-    }
+      nodeIntegration: false,
+    },
   })
 
   let resizeTimer: NodeJS.Timeout | null = null
@@ -64,50 +109,123 @@ async function createWindow(): Promise<void> {
     }, RESIZE_DEBOUNCE_MS)
   })
 
+  // Intercept close so the renderer can prompt about unsaved changes first.
+  // The renderer must call `app:approve-close` (via the preload API) to let
+  // a subsequent close go through.
+  win.on('close', (event) => {
+    if (allowClose) return
+    event.preventDefault()
+    win.webContents.send('app:close-request')
+  })
+
   if (process.env['ELECTRON_RENDERER_URL']) {
     win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
     win.loadFile(join(__dirname, '../renderer/index.html'))
   }
+  return win
 }
 
 app.whenReady().then(async () => {
-  ipcMain.handle('import-tsv', async (): Promise<ImportResult | null> => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
-      title: 'Import Monarch TSV',
-      filters: [{ name: 'TSV Files', extensions: ['tsv'] }],
-      properties: ['openFile']
-    })
-    if (canceled || filePaths.length === 0) return null
-    return importTsvFile(filePaths[0], masterFilePath())
-  })
+  let mainWindow: BrowserWindow | null = null
 
-  ipcMain.handle('load-master', async (): Promise<MasterFile> => {
-    const path = masterFilePath()
-    const file = await loadMasterFile(path)
-    if (file.records.length === 0) {
-      // Seed on first run so the override UI has something to demonstrate.
-      // Persisted to disk immediately so subsequent loads return the same
-      // records (and imports merge against them rather than against empty).
-      const seeded: MasterFile = {
-        version: 1,
-        records: sortRecordsByDateDescending(makeSeedRecords()),
+  buildMenu(() => mainWindow)
+
+  ipcMain.handle(
+    'dialog:open',
+    async (event): Promise<string | null> => {
+      const win = BrowserWindow.fromWebContents(event.sender)
+      const result = win
+        ? await dialog.showOpenDialog(win, {
+            title: 'Open Transaction File',
+            filters: MASTER_FILE_FILTERS,
+            properties: ['openFile'],
+          })
+        : await dialog.showOpenDialog({
+            title: 'Open Transaction File',
+            filters: MASTER_FILE_FILTERS,
+            properties: ['openFile'],
+          })
+      if (result.canceled || result.filePaths.length === 0) return null
+      return result.filePaths[0]
+    },
+  )
+
+  ipcMain.handle(
+    'dialog:save',
+    async (event, defaultName?: string): Promise<string | null> => {
+      const win = BrowserWindow.fromWebContents(event.sender)
+      const options: Electron.SaveDialogOptions = {
+        title: 'Save Transaction File',
+        filters: MASTER_FILE_FILTERS,
+        defaultPath: defaultName,
       }
-      await saveMasterFile(path, seeded)
-      return seeded
-    }
-    return file
+      const result = win
+        ? await dialog.showSaveDialog(win, options)
+        : await dialog.showSaveDialog(options)
+      if (result.canceled || !result.filePath) return null
+      return result.filePath
+    },
+  )
+
+  ipcMain.handle(
+    'file:read',
+    async (_event, path: string): Promise<MasterFile> => {
+      return loadMasterFile(path)
+    },
+  )
+
+  ipcMain.handle(
+    'file:write',
+    async (_event, path: string, records: TransactionRecord[]): Promise<void> => {
+      const file: MasterFile = {
+        version: 1,
+        records: sortRecordsByDateDescending(records),
+      }
+      await saveMasterFile(path, file)
+    },
+  )
+
+  ipcMain.handle(
+    'dialog:confirm-discard',
+    async (event): Promise<DiscardChoice> => {
+      const win = BrowserWindow.fromWebContents(event.sender)
+      const options: Electron.MessageBoxOptions = {
+        type: 'question',
+        buttons: ['Save', "Don't Save", 'Cancel'],
+        defaultId: 0,
+        cancelId: 2,
+        title: 'Unsaved Changes',
+        message: 'You have unsaved changes.',
+        detail: 'Save them before continuing?',
+      }
+      const result = win
+        ? await dialog.showMessageBox(win, options)
+        : await dialog.showMessageBox(options)
+      if (result.response === 0) return 'save'
+      if (result.response === 1) return 'discard'
+      return 'cancel'
+    },
+  )
+
+  ipcMain.on('app:approve-close', (event) => {
+    allowClose = true
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (win) win.close()
   })
 
   ipcMain.handle(
-    'save-master',
-    async (_event, records: TransactionRecord[]): Promise<void> => {
-      const file: MasterFile = {
-        version: 1,
-        records: sortRecordsByDateDescending(records)
-      }
-      await saveMasterFile(masterFilePath(), file)
-    }
+    'import-tsv',
+    async (_event, currentRecords: TransactionRecord[]): Promise<ImportResult | null> => {
+      const { canceled, filePaths } = await dialog.showOpenDialog({
+        title: 'Import Monarch TSV',
+        filters: [{ name: 'TSV Files', extensions: ['tsv'] }],
+        properties: ['openFile'],
+      })
+      if (canceled || filePaths.length === 0) return null
+      const current: MasterFile = { version: 1, records: currentRecords }
+      return importTsvFile(filePaths[0], current)
+    },
   )
 
   ipcMain.handle('settings-load', async (): Promise<Settings> => {
@@ -118,10 +236,10 @@ app.whenReady().then(async () => {
     'settings-save-categories',
     async (_event, categories: string[]): Promise<void> => {
       await updateSettings((s) => ({ ...s, categories }))
-    }
+    },
   )
 
-  await createWindow()
+  mainWindow = await createWindow()
 })
 
 app.on('window-all-closed', () => {

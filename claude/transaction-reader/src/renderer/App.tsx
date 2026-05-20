@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   ImportResult,
   OriginalTransaction,
@@ -35,6 +35,8 @@ export default function App(): JSX.Element {
   const [resortKey, setResortKey] = useState(0)
   // The transactions grid's filter, mirrored here so the Report tab shares it.
   const [reportFilter, setReportFilter] = useState<FilterCriteria>(EMPTY_FILTER)
+  // The file the records were last opened from or saved to; null = untitled.
+  const [currentPath, setCurrentPath] = useState<string | null>(null)
   const dirty = history.present !== savedRef
 
   const reset = useCallback((records: TransactionRecord[]): void => {
@@ -43,9 +45,9 @@ export default function App(): JSX.Element {
   }, [])
 
   useEffect(() => {
-    window.api.loadMaster().then((m) => reset(m.records))
+    // No master file is auto-loaded; the user opens one from the File menu.
     window.api.loadSettings().then((s) => setCategories(s.categories))
-  }, [reset])
+  }, [])
 
   const apply = useCallback(
     (updater: (records: TransactionRecord[]) => TransactionRecord[]): void => {
@@ -82,6 +84,45 @@ export default function App(): JSX.Element {
     )
   }, [])
 
+  // Latest handlers, accessed via ref so the menu/close subscriptions can stay
+  // mounted once but always invoke the up-to-date logic.
+  const handlersRef = useRef({
+    handleNew,
+    handleOpen,
+    handleSave,
+    handleSaveAs,
+    handleCloseRequest,
+  })
+  handlersRef.current = {
+    handleNew,
+    handleOpen,
+    handleSave,
+    handleSaveAs,
+    handleCloseRequest,
+  }
+
+  useEffect(() => {
+    const offMenu = window.api.onMenuCommand((command) => {
+      const h = handlersRef.current
+      if (command === 'new') void h.handleNew()
+      else if (command === 'open') void h.handleOpen()
+      else if (command === 'save') void h.handleSave()
+      else if (command === 'save-as') void h.handleSaveAs()
+    })
+    const offClose = window.api.onCloseRequest(() => {
+      void handlersRef.current.handleCloseRequest()
+    })
+    return () => {
+      offMenu()
+      offClose()
+    }
+  }, [])
+
+  useEffect(() => {
+    const fileName = currentPath ? currentPath.split(/[\\/]/).pop() ?? '(untitled)' : '(untitled)'
+    document.title = `${dirty ? '* ' : ''}${fileName} — Transaction Reader`
+  }, [currentPath, dirty])
+
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
       const t = e.target as HTMLElement | null
@@ -103,16 +144,64 @@ export default function App(): JSX.Element {
   }, [undo, redo])
 
   async function handleImport(): Promise<void> {
-    const result = await window.api.importTsv()
-    if (result) {
-      reset(result.master.records)
-      setLastImport(result)
-    }
+    const result = await window.api.importTsv(history.present)
+    if (!result) return
+    // Make the import a single undoable step rather than overwriting history;
+    // the merged records aren't on disk yet, so this leaves the doc dirty.
+    apply(() => result.master.records)
+    setLastImport(result)
   }
 
-  async function handleSave(): Promise<void> {
-    await window.api.saveMaster(history.present)
-    setSavedRef(history.present)
+  // Save returns true if it persisted (or the user cancelled with nothing to
+  // do); false if a Save-As dialog was cancelled, so callers can abort chains.
+  async function handleSave(): Promise<boolean> {
+    if (!currentPath) return handleSaveAs()
+    const snapshot = history.present
+    await window.api.writeMasterFile(currentPath, snapshot)
+    setSavedRef(snapshot)
+    return true
+  }
+
+  async function handleSaveAs(): Promise<boolean> {
+    const path = await window.api.showSaveDialog(currentPath ?? undefined)
+    if (!path) return false
+    const snapshot = history.present
+    await window.api.writeMasterFile(path, snapshot)
+    setCurrentPath(path)
+    setSavedRef(snapshot)
+    return true
+  }
+
+  // The standard "save / discard / cancel" prompt before a destructive action.
+  // Returns true if the caller should proceed.
+  async function confirmIfDirty(): Promise<boolean> {
+    if (!dirty) return true
+    const choice = await window.api.confirmDiscard()
+    if (choice === 'cancel') return false
+    if (choice === 'save') return handleSave()
+    return true
+  }
+
+  async function handleOpen(): Promise<void> {
+    if (!(await confirmIfDirty())) return
+    const path = await window.api.showOpenDialog()
+    if (!path) return
+    const master = await window.api.readMasterFile(path)
+    reset(master.records)
+    setCurrentPath(path)
+    setLastImport(null)
+  }
+
+  async function handleNew(): Promise<void> {
+    if (!(await confirmIfDirty())) return
+    reset([])
+    setCurrentPath(null)
+    setLastImport(null)
+  }
+
+  async function handleCloseRequest(): Promise<void> {
+    if (!(await confirmIfDirty())) return
+    window.api.approveClose()
   }
 
   function handleSetField(
@@ -222,7 +311,7 @@ export default function App(): JSX.Element {
   const toolbar = (
     <div className="toolbar">
       <button onClick={handleImport}>Import</button>
-      <button onClick={handleSave} disabled={!dirty}>
+      <button onClick={() => void handleSave()} disabled={!dirty}>
         {dirty ? 'Save *' : 'Save'}
       </button>
       <button

@@ -1,20 +1,52 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { IpcRendererEvent } from 'electron'
 import type {
+  DiscardChoice,
   ElectronApi,
   ImportResult,
   MasterFile,
+  MenuCommand,
   Settings,
-  TransactionRecord
+  TransactionRecord,
 } from '../shared/types'
 
 const api: ElectronApi = {
-  importTsv: (): Promise<ImportResult | null> => ipcRenderer.invoke('import-tsv'),
-  loadMaster: (): Promise<MasterFile> => ipcRenderer.invoke('load-master'),
-  saveMaster: (records: TransactionRecord[]): Promise<void> =>
-    ipcRenderer.invoke('save-master', records),
+  importTsv: (
+    currentRecords: readonly TransactionRecord[],
+  ): Promise<ImportResult | null> =>
+    ipcRenderer.invoke('import-tsv', currentRecords),
+
+  showOpenDialog: (): Promise<string | null> => ipcRenderer.invoke('dialog:open'),
+  showSaveDialog: (defaultName?: string): Promise<string | null> =>
+    ipcRenderer.invoke('dialog:save', defaultName),
+  readMasterFile: (path: string): Promise<MasterFile> =>
+    ipcRenderer.invoke('file:read', path),
+  writeMasterFile: (
+    path: string,
+    records: readonly TransactionRecord[],
+  ): Promise<void> => ipcRenderer.invoke('file:write', path, records),
+  confirmDiscard: (): Promise<DiscardChoice> =>
+    ipcRenderer.invoke('dialog:confirm-discard'),
+
+  onMenuCommand: (callback: (command: MenuCommand) => void): (() => void) => {
+    const listener = (_event: IpcRendererEvent, command: MenuCommand): void => {
+      callback(command)
+    }
+    ipcRenderer.on('menu:command', listener)
+    return () => ipcRenderer.off('menu:command', listener)
+  },
+  onCloseRequest: (callback: () => void): (() => void) => {
+    const listener = (): void => callback()
+    ipcRenderer.on('app:close-request', listener)
+    return () => ipcRenderer.off('app:close-request', listener)
+  },
+  approveClose: (): void => {
+    ipcRenderer.send('app:approve-close')
+  },
+
   loadSettings: (): Promise<Settings> => ipcRenderer.invoke('settings-load'),
   saveCategories: (categories: string[]): Promise<void> =>
-    ipcRenderer.invoke('settings-save-categories', categories)
+    ipcRenderer.invoke('settings-save-categories', categories),
 }
 
 contextBridge.exposeInMainWorld('api', api)

@@ -76,16 +76,50 @@ export interface Settings {
   window?: WindowSize
 }
 
+/** Commands the File menu sends from the main process to the renderer. */
+export type MenuCommand = 'new' | 'open' | 'save' | 'save-as'
+
+/** User's reply to the "save before losing changes?" prompt. */
+export type DiscardChoice = 'save' | 'discard' | 'cancel'
+
 export interface ElectronApi {
   /**
-   * Open a file picker for a Monarch TSV export and import it.
-   * Returns the import result, or null if the user cancelled the dialog.
+   * Open a file picker for a Monarch TSV export and merge it into the given
+   * records. Returns the merged result, or null if the dialog was cancelled.
+   * The renderer is responsible for persisting (no disk write happens here).
    */
-  importTsv: () => Promise<ImportResult | null>
-  /** Read the current master file (returns an empty one on first run). */
-  loadMaster: () => Promise<MasterFile>
-  /** Persist the renderer's current set of records (overrides + ignored flags included). */
-  saveMaster: (records: TransactionRecord[]) => Promise<void>
+  importTsv: (
+    currentRecords: readonly TransactionRecord[],
+  ) => Promise<ImportResult | null>
+
+  /** Show a native open-file dialog; resolves to the chosen path or null. */
+  showOpenDialog: () => Promise<string | null>
+  /** Show a native save-as dialog; resolves to the chosen path or null. */
+  showSaveDialog: (defaultName?: string) => Promise<string | null>
+  /** Read a master file from disk. */
+  readMasterFile: (path: string) => Promise<MasterFile>
+  /** Write the records (sorted, in a versioned envelope) to disk. */
+  writeMasterFile: (
+    path: string,
+    records: readonly TransactionRecord[],
+  ) => Promise<void>
+  /** Show the unsaved-changes prompt (Save / Don't Save / Cancel). */
+  confirmDiscard: () => Promise<DiscardChoice>
+
+  /**
+   * Subscribe to File-menu commands from the main process. Returns an
+   * unsubscribe function.
+   */
+  onMenuCommand: (callback: (command: MenuCommand) => void) => () => void
+  /**
+   * Subscribe to a close request from the main process. The renderer must
+   * eventually call `approveClose` (after any confirm/save flow) for the
+   * window to actually close. Returns an unsubscribe function.
+   */
+  onCloseRequest: (callback: () => void) => () => void
+  /** Tell the main process it is now safe to close the window. */
+  approveClose: () => void
+
   /** Read app settings (returns defaults on first run). */
   loadSettings: () => Promise<Settings>
   /** Persist the custom-category list. Other settings fields are left untouched. */

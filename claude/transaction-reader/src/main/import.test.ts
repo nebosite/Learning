@@ -2,20 +2,20 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import type { MasterFile } from '../shared/types'
 import { importTsvFile } from './import'
-import { loadMasterFile } from './master-file'
 
 const HEADER =
   'Date\tMerchant\tCategory\tAccount\tOriginal Statement\tNotes\tAmount\tTags\tOwner'
 
+const EMPTY_MASTER: MasterFile = { version: 1, records: [] }
+
 let dir: string
 let tsvPath: string
-let masterPath: string
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'import-test-'))
   tsvPath = join(dir, 'export.tsv')
-  masterPath = join(dir, 'master.json')
 })
 
 afterEach(async () => {
@@ -34,15 +34,12 @@ describe('importTsvFile', () => {
       'utf8',
     )
 
-    const r = await importTsvFile(tsvPath, masterPath)
+    const r = await importTsvFile(tsvPath, EMPTY_MASTER)
     expect(r.added).toBe(2)
     expect(r.skipped).toBe(0)
     expect(r.autoIgnored).toBe(0)
     expect(r.parseErrors).toEqual([])
     expect(r.master.records).toHaveLength(2)
-
-    const loaded = await loadMasterFile(masterPath)
-    expect(loaded.records).toHaveLength(2)
   })
 
   it('is idempotent when re-importing the same file', async () => {
@@ -52,8 +49,8 @@ describe('importTsvFile', () => {
     ].join('\n')
     await writeFile(tsvPath, content, 'utf8')
 
-    await importTsvFile(tsvPath, masterPath)
-    const second = await importTsvFile(tsvPath, masterPath)
+    const first = await importTsvFile(tsvPath, EMPTY_MASTER)
+    const second = await importTsvFile(tsvPath, first.master)
     expect(second.added).toBe(0)
     expect(second.skipped).toBe(1)
     expect(second.master.records).toHaveLength(1)
@@ -70,12 +67,10 @@ describe('importTsvFile', () => {
       'utf8',
     )
 
-    const r = await importTsvFile(tsvPath, masterPath)
+    const r = await importTsvFile(tsvPath, EMPTY_MASTER)
     expect(r.added).toBe(2)
     expect(r.autoIgnored).toBe(2)
-
-    const loaded = await loadMasterFile(masterPath)
-    expect(loaded.records.every((rec) => rec.ignored)).toBe(true)
+    expect(r.master.records.every((rec) => rec.ignored)).toBe(true)
   })
 
   it('returns parse errors without aborting the import', async () => {
@@ -89,13 +84,13 @@ describe('importTsvFile', () => {
       'utf8',
     )
 
-    const r = await importTsvFile(tsvPath, masterPath)
+    const r = await importTsvFile(tsvPath, EMPTY_MASTER)
     expect(r.parseErrors).toHaveLength(1)
     expect(r.added).toBe(1)
     expect(r.master.records).toHaveLength(1)
   })
 
-  it('sorts the persisted master by effective date descending', async () => {
+  it('sorts the returned master by effective date descending', async () => {
     await writeFile(
       tsvPath,
       [
@@ -107,12 +102,12 @@ describe('importTsvFile', () => {
       'utf8',
     )
 
-    const r = await importTsvFile(tsvPath, masterPath)
+    const r = await importTsvFile(tsvPath, EMPTY_MASTER)
     expect(r.master.records.map((rec) => rec.original.merchant)).toEqual(['B', 'C', 'A'])
   })
 
   it('propagates whole-file parse errors as exceptions', async () => {
     await writeFile(tsvPath, '', 'utf8')
-    await expect(importTsvFile(tsvPath, masterPath)).rejects.toThrow()
+    await expect(importTsvFile(tsvPath, EMPTY_MASTER)).rejects.toThrow()
   })
 })
