@@ -55,6 +55,32 @@
   z-index: 2;
 }
 
+/* Headers carrying a sort button lay their label and button out in a row. */
+.report-sortable {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.report-month.report-sortable {
+  justify-content: flex-end;
+}
+
+.report-sort-btn {
+  flex: none;
+  padding: 0 2px;
+  background: none;
+  border: none;
+  font-size: 11px;
+  line-height: 1;
+  color: #999;
+  cursor: pointer;
+}
+
+.report-sort-btn-active {
+  color: #3b82f6;
+}
+
 .report-rowhead {
   background: #f5f5f5;
   font-weight: 600;
@@ -71,17 +97,47 @@
 
 .report-cell-empty {
   cursor: default;
-  background: #fafafa;
 }
 
-.report-cell:not(.report-cell-empty):hover {
-  background: #eef4ff;
+/* Alternating row colors for the category rows: light / very light blue.
+   The data cells are transparent so the row color shows through. */
+.report-row-even {
+  background: #eff6ff;
 }
 
-.report-cell-selected,
-.report-cell-selected:hover {
+.report-row-odd {
+  background: #dbeafe;
+}
+
+.report-row-even th.report-rowhead {
+  background: #eff6ff;
+}
+
+.report-row-odd th.report-rowhead {
+  background: #dbeafe;
+}
+
+/* A selected cell paints its own background over the row color. */
+.report-cell-selected {
   background: #3b82f6;
   color: white;
+}
+
+/* Totals / average columns and the bottom totals row: light gray, bold. */
+.report-total-cell {
+  text-align: right;
+  background: #ededed;
+  font-weight: 600;
+}
+
+.report-totals-row th,
+.report-totals-row td {
+  background: #ededed;
+  font-weight: 600;
+}
+
+.report-totals-row td {
+  text-align: right;
 }
 
 /* The embedded edit grid fills the space left below the report table. */
