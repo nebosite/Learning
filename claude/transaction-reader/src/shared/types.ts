@@ -76,8 +76,8 @@ export interface Settings {
   window?: WindowSize
 }
 
-/** Commands the File menu sends from the main process to the renderer. */
-export type MenuCommand = 'new' | 'open' | 'save' | 'save-as'
+/** Commands the application menu sends from the main process to the renderer. */
+export type MenuCommand = 'new' | 'open' | 'save' | 'save-as' | 'help'
 
 /** User's reply to the "save before losing changes?" prompt. */
 export type DiscardChoice = 'save' | 'discard' | 'cancel'
@@ -105,6 +105,8 @@ export interface ElectronApi {
   ) => Promise<void>
   /** Show the unsaved-changes prompt (Save / Don't Save / Cancel). */
   confirmDiscard: () => Promise<DiscardChoice>
+  /** Read the bundled README.md (markdown source) for in-app help. */
+  readReadme: () => Promise<string>
 
   /**
    * Subscribe to File-menu commands from the main process. Returns an

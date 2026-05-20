@@ -1,11 +1,13 @@
 {
   "name": "transaction-reader",
   "version": "1.0.0",
-  "description": "Merge and normalize Monarch Money CSV exports",
+  "description": "Merge and normalize Monarch Money TSV exports",
+  "author": "Eric Jorgensen",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "start": "electron .",
     "lint": "eslint src --ext .ts,.tsx",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
@@ -22,6 +24,7 @@
     "vitest": "^2.1.9"
   },
   "dependencies": {
+    "marked": "^18.0.4",
     "react": "^18.0.0",
     "react-dom": "^18.0.0"
   }

@@ -9,6 +9,7 @@ import { effectiveValue } from '../shared/records'
 import type { FilterCriteria } from './filter'
 import { EMPTY_FILTER } from './filter'
 import { Grid } from './grid'
+import { HelpModal } from './help-modal'
 import { Report } from './report'
 import { SettingsView } from './settings'
 import './app.css'
@@ -37,6 +38,8 @@ export default function App(): JSX.Element {
   const [reportFilter, setReportFilter] = useState<FilterCriteria>(EMPTY_FILTER)
   // The file the records were last opened from or saved to; null = untitled.
   const [currentPath, setCurrentPath] = useState<string | null>(null)
+  // Whether the in-app Help dialog (rendered README) is showing.
+  const [helpOpen, setHelpOpen] = useState(false)
   const dirty = history.present !== savedRef
 
   const reset = useCallback((records: TransactionRecord[]): void => {
@@ -108,6 +111,7 @@ export default function App(): JSX.Element {
       else if (command === 'open') void h.handleOpen()
       else if (command === 'save') void h.handleSave()
       else if (command === 'save-as') void h.handleSaveAs()
+      else if (command === 'help') setHelpOpen(true)
     })
     const offClose = window.api.onCloseRequest(() => {
       void handlersRef.current.handleCloseRequest()
@@ -417,6 +421,7 @@ export default function App(): JSX.Element {
           onDeleteCategory={handleDeleteCategory}
         />
       </div>
+      {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
     </div>
   )
 }

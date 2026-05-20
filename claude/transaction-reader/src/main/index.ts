@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron'
+import { readFile } from 'fs/promises'
 import { join } from 'path'
 import type {
   DiscardChoice,
@@ -20,6 +21,34 @@ const MASTER_FILE_FILTERS = [
   { name: 'Transaction Master', extensions: ['json'] },
   { name: 'All Files', extensions: ['*'] },
 ]
+
+const ABOUT_NAME = 'Transaction Reader'
+const ABOUT_DESCRIPTION =
+  'Curate and normalize Monarch Money TSV exports into a personal record of your spending history.'
+const ABOUT_AUTHOR = 'Eric Jorgensen'
+
+function readmePath(): string {
+  // README.md sits at the project root; app.getAppPath() resolves to that in
+  // dev and to the asar root in a packaged build (where the file would need
+  // to be added via the packager's extraResources configuration).
+  return join(app.getAppPath(), 'README.md')
+}
+
+async function showAbout(win: BrowserWindow | null): Promise<void> {
+  const opts: Electron.MessageBoxOptions = {
+    type: 'info',
+    title: `About ${ABOUT_NAME}`,
+    message: `${ABOUT_NAME}\nVersion ${app.getVersion()}`,
+    detail:
+      `${ABOUT_DESCRIPTION}\n\n` +
+      `© ${new Date().getFullYear()} ${ABOUT_AUTHOR}\n\n` +
+      `Electron ${process.versions.electron} · ` +
+      `Chromium ${process.versions.chrome} · ` +
+      `Node ${process.versions.node}`,
+    buttons: ['OK'],
+  }
+  await (win ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts))
+}
 
 function settingsFilePath(): string {
   return join(app.getPath('userData'), 'settings.json')
@@ -79,6 +108,21 @@ function buildMenu(getActiveWindow: () => BrowserWindow | null): void {
     { role: 'editMenu' },
     { role: 'viewMenu' },
     { role: 'windowMenu' },
+    {
+      role: 'help',
+      submenu: [
+        {
+          label: 'Help',
+          accelerator: 'F1',
+          click: () => sendIfActive('help'),
+        },
+        { type: 'separator' },
+        {
+          label: `About ${ABOUT_NAME}`,
+          click: () => void showAbout(getActiveWindow()),
+        },
+      ],
+    },
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
@@ -185,6 +229,10 @@ app.whenReady().then(async () => {
       await saveMasterFile(path, file)
     },
   )
+
+  ipcMain.handle('file:read-readme', async (): Promise<string> => {
+    return readFile(readmePath(), 'utf8')
+  })
 
   ipcMain.handle(
     'dialog:confirm-discard',
