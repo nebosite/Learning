@@ -67,12 +67,13 @@ describe('parseMonarchCsv', () => {
     expect(rows).toHaveLength(1)
   })
 
-  it('skips blank and whitespace-only lines', () => {
+  it('skips blank, whitespace-only, and 1-character lines', () => {
     const text = [
       HEADER,
       '',
       '5/8/2026,A,B,C,D,,-1,,S',
       '   ',
+      ',', // a stray comma some exporters leave at the end
       '5/9/2026,A,B,C,D,,-2,,S',
     ].join('\n')
     const { rows, errors } = parseMonarchCsv(text)

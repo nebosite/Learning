@@ -1,16 +1,12 @@
-import type { IsoDate, OriginalTransaction, ParseError } from '../shared/types'
+import type { OriginalTransaction, ParseError } from '../shared/types'
+import {
+  parseFlexibleDate,
+  parseNumericCell,
+  tokenizeCsvLine,
+} from './csv-format'
+import type { ParsedRow, ParseResult } from './csv-format'
 
-export type { ParseError }
-
-export interface ParsedRow {
-  raw: string
-  parsed: OriginalTransaction
-}
-
-export interface ParseResult {
-  rows: ParsedRow[]
-  errors: ParseError[]
-}
+export type { ParseError, ParsedRow, ParseResult }
 
 const REQUIRED_HEADERS = [
   'Date',
@@ -26,6 +22,12 @@ const REQUIRED_HEADERS = [
 
 type RequiredHeader = (typeof REQUIRED_HEADERS)[number]
 
+/** Whether the given CSV header line looks like a Monarch Money export. */
+export function looksLikeMonarchCsv(headerLine: string): boolean {
+  const headers = new Set(tokenizeCsvLine(headerLine).map((h) => h.trim()))
+  return REQUIRED_HEADERS.every((h) => headers.has(h))
+}
+
 /**
  * Parse the text of a Monarch Money CSV export.
  *
@@ -39,7 +41,7 @@ export function parseMonarchCsv(text: string): ParseResult {
     throw new Error('CSV file is empty.')
   }
 
-  const headerFields = tokenize(lines[0])
+  const headerFields = tokenizeCsvLine(lines[0])
   const headerIndex = new Map<string, number>()
   for (let i = 0; i < headerFields.length; i++) {
     headerIndex.set(headerFields[i], i)
@@ -57,20 +59,22 @@ export function parseMonarchCsv(text: string): ParseResult {
 
   for (let lineIdx = 1; lineIdx < lines.length; lineIdx++) {
     const raw = lines[lineIdx]
-    if (raw.trim() === '') continue
+    // Skip anything too short to be a real row: blank, whitespace, or a stray
+    // single character (some exporters end the file with a lone comma).
+    if (raw.trim().length < 2) continue
     const lineNumber = lineIdx + 1
 
     try {
-      const fields = tokenize(raw)
+      const fields = tokenizeCsvLine(raw)
       const dateRaw = fields[col('Date')] ?? ''
       const amountRaw = fields[col('Amount')] ?? ''
 
-      const date = parseDate(dateRaw)
+      const date = parseFlexibleDate(dateRaw)
       if (date === null) {
         throw new Error(`Could not parse date "${dateRaw}".`)
       }
 
-      const amount = parseAmount(amountRaw)
+      const amount = parseNumericCell(amountRaw)
       if (amount === null) {
         throw new Error(`Could not parse amount "${amountRaw}".`)
       }
@@ -97,72 +101,4 @@ export function parseMonarchCsv(text: string): ParseResult {
   }
 
   return { rows, errors }
-}
-
-/**
- * Tokenize one CSV line into fields (RFC 4180). A field that starts with `"`
- * is quoted: it ends at the next unescaped `"`, and `""` inside a quoted
- * field represents a literal `"`. Unquoted fields end at the next comma.
- */
-function tokenize(line: string): string[] {
-  const fields: string[] = []
-  let i = 0
-  while (i <= line.length) {
-    let field = ''
-    if (i < line.length && line[i] === '"') {
-      i++
-      while (i < line.length) {
-        if (line[i] === '"') {
-          if (line[i + 1] === '"') {
-            field += '"'
-            i += 2
-          } else {
-            i++
-            break
-          }
-        } else {
-          field += line[i]
-          i++
-        }
-      }
-      while (i < line.length && line[i] !== ',') i++
-    } else {
-      while (i < line.length && line[i] !== ',') {
-        field += line[i]
-        i++
-      }
-    }
-    fields.push(field)
-    if (i < line.length && line[i] === ',') {
-      i++
-    } else {
-      break
-    }
-  }
-  return fields
-}
-
-function parseDate(s: string): IsoDate | null {
-  const t = s.trim()
-  // YYYY-MM-DD — the format Monarch's CSV export actually uses.
-  const iso = t.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`
-  // M/D/YYYY — kept for hand-edited files and older exports.
-  const slash = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
-  if (slash) {
-    const month = slash[1].padStart(2, '0')
-    const day = slash[2].padStart(2, '0')
-    return `${slash[3]}-${month}-${day}`
-  }
-  return null
-}
-
-function parseAmount(s: string): number | null {
-  // Strip thousands-separator commas; a quoted CSV cell like "1,234.56" loses
-  // its quotes during tokenization and still arrives here with the comma.
-  const trimmed = s.trim().replace(/,/g, '')
-  if (trimmed === '') return null
-  const n = Number(trimmed)
-  if (Number.isNaN(n)) return null
-  return n
 }

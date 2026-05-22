@@ -2,7 +2,7 @@ out/**
 node_modules/**
 
 # Personal financial data — never commit
-sampledata.csv
-sampledata.tsv
+sample*.csv
+sample*.tsv
 *.monarch.csv
 *.monarch.tsv

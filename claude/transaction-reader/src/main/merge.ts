@@ -1,6 +1,6 @@
 import type { MasterFile, TransactionRecord } from '../shared/types'
 import { sortRecordsByDateDescending } from '../shared/records'
-import type { ParsedRow } from './tsv'
+import type { ParsedRow } from './csv-format'
 
 export interface MergeResult {
   master: MasterFile
