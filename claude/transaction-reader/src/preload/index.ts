@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import type {
+  Budget,
   DiscardChoice,
   ElectronApi,
   ImportResult,
@@ -24,7 +25,8 @@ const api: ElectronApi = {
   writeMasterFile: (
     path: string,
     records: readonly TransactionRecord[],
-  ): Promise<void> => ipcRenderer.invoke('file:write', path, records),
+    budgets: readonly Budget[],
+  ): Promise<void> => ipcRenderer.invoke('file:write', path, records, budgets),
   confirmDiscard: (): Promise<DiscardChoice> =>
     ipcRenderer.invoke('dialog:confirm-discard'),
   readReadme: (): Promise<string> => ipcRenderer.invoke('file:read-readme'),
@@ -48,6 +50,8 @@ const api: ElectronApi = {
   loadSettings: (): Promise<Settings> => ipcRenderer.invoke('settings-load'),
   saveCategories: (categories: string[]): Promise<void> =>
     ipcRenderer.invoke('settings-save-categories', categories),
+  setLastOpenedPath: (path: string | null): Promise<void> =>
+    ipcRenderer.invoke('settings-set-last-opened', path),
 }
 
 contextBridge.exposeInMainWorld('api', api)

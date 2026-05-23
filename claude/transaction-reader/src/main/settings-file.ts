@@ -69,5 +69,8 @@ function isSettingsShape(v: unknown): v is Settings {
     const w = obj.window as Record<string, unknown>
     if (typeof w.width !== 'number' || typeof w.height !== 'number') return false
   }
+  if (obj.lastOpenedPath !== undefined && typeof obj.lastOpenedPath !== 'string') {
+    return false
+  }
   return true
 }

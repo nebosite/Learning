@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
+  Budget,
   ImportResult,
   OriginalTransaction,
   TransactionOverrides,
   TransactionRecord,
 } from '../shared/types'
 import { effectiveValue } from '../shared/records'
+import { BudgetView } from './budget'
 import { Grid } from './grid'
 import { HelpModal } from './help-modal'
 import { Report } from './report'
@@ -14,7 +16,7 @@ import './app.css'
 
 const MAX_HISTORY = 100
 
-type View = 'transactions' | 'report' | 'settings'
+type View = 'transactions' | 'report' | 'budget' | 'settings'
 
 interface History {
   past: TransactionRecord[][]
@@ -36,17 +38,41 @@ export default function App(): JSX.Element {
   const [currentPath, setCurrentPath] = useState<string | null>(null)
   // Whether the in-app Help dialog (rendered README) is showing.
   const [helpOpen, setHelpOpen] = useState(false)
-  const dirty = history.present !== savedRef
+  // Budgets live in the master file; track them in parallel with the records
+  // and their savedRef so dirty considers both.
+  const [budgets, setBudgets] = useState<Budget[]>([])
+  const [savedBudgetsRef, setSavedBudgetsRef] = useState<Budget[]>(budgets)
+  const dirty =
+    history.present !== savedRef || budgets !== savedBudgetsRef
 
-  const reset = useCallback((records: TransactionRecord[]): void => {
-    setHistory({ past: [], present: records, future: [] })
-    setSavedRef(records)
-  }, [])
+  const reset = useCallback(
+    (records: TransactionRecord[], fileBudgets: Budget[] = []): void => {
+      setHistory({ past: [], present: records, future: [] })
+      setSavedRef(records)
+      setBudgets(fileBudgets)
+      setSavedBudgetsRef(fileBudgets)
+    },
+    [],
+  )
 
   useEffect(() => {
-    // No master file is auto-loaded; the user opens one from the File menu.
-    window.api.loadSettings().then((s) => setCategories(s.categories))
-  }, [])
+    // Load settings, then try to reopen whatever file was open last session.
+    // If that file has been moved or is no longer parseable, we silently
+    // start empty — the user can still File > Open... anything else.
+    void (async () => {
+      const s = await window.api.loadSettings()
+      setCategories(s.categories)
+      if (!s.lastOpenedPath) return
+      try {
+        const master = await window.api.readMasterFile(s.lastOpenedPath)
+        reset(master.records, master.budgets ?? [])
+        setCurrentPath(s.lastOpenedPath)
+      } catch (err) {
+        console.warn('Could not auto-open last file:', err)
+        await window.api.setLastOpenedPath(null)
+      }
+    })()
+  }, [reset])
 
   const apply = useCallback(
     (updater: (records: TransactionRecord[]) => TransactionRecord[]): void => {
@@ -156,19 +182,24 @@ export default function App(): JSX.Element {
   // do); false if a Save-As dialog was cancelled, so callers can abort chains.
   async function handleSave(): Promise<boolean> {
     if (!currentPath) return handleSaveAs()
-    const snapshot = history.present
-    await window.api.writeMasterFile(currentPath, snapshot)
-    setSavedRef(snapshot)
+    const records = history.present
+    const budgetsSnapshot = budgets
+    await window.api.writeMasterFile(currentPath, records, budgetsSnapshot)
+    setSavedRef(records)
+    setSavedBudgetsRef(budgetsSnapshot)
     return true
   }
 
   async function handleSaveAs(): Promise<boolean> {
     const path = await window.api.showSaveDialog(currentPath ?? undefined)
     if (!path) return false
-    const snapshot = history.present
-    await window.api.writeMasterFile(path, snapshot)
+    const records = history.present
+    const budgetsSnapshot = budgets
+    await window.api.writeMasterFile(path, records, budgetsSnapshot)
     setCurrentPath(path)
-    setSavedRef(snapshot)
+    setSavedRef(records)
+    setSavedBudgetsRef(budgetsSnapshot)
+    void window.api.setLastOpenedPath(path)
     return true
   }
 
@@ -187,16 +218,18 @@ export default function App(): JSX.Element {
     const path = await window.api.showOpenDialog()
     if (!path) return
     const master = await window.api.readMasterFile(path)
-    reset(master.records)
+    reset(master.records, master.budgets ?? [])
     setCurrentPath(path)
     setLastImport(null)
+    void window.api.setLastOpenedPath(path)
   }
 
   async function handleNew(): Promise<void> {
     if (!(await confirmIfDirty())) return
-    reset([])
+    reset([], [])
     setCurrentPath(null)
     setLastImport(null)
+    void window.api.setLastOpenedPath(null)
   }
 
   async function handleCloseRequest(): Promise<void> {
@@ -307,6 +340,21 @@ export default function App(): JSX.Element {
     persistCategories(categories.filter((c) => c !== name))
   }
 
+  // Distinct categories used to seed a new budget: every effective category in
+  // the records plus every custom category. Computed in App so the Budget tab
+  // doesn't have to recompute on every render.
+  const availableCategories = useMemo(() => {
+    const set = new Set<string>()
+    for (const r of history.present) {
+      const c = effectiveValue(r, 'category')
+      if (typeof c === 'string' && c.trim() !== '') set.add(c.trim())
+    }
+    for (const c of categories) {
+      if (c.trim() !== '') set.add(c.trim())
+    }
+    return [...set].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+  }, [history.present, categories])
+
   // Shared by the Transactions and Report tabs (both edit transactions).
   const toolbar = (
     <div className="toolbar">
@@ -364,6 +412,12 @@ export default function App(): JSX.Element {
           Spending analysis
         </button>
         <button
+          className={`tab${view === 'budget' ? ' tab-active' : ''}`}
+          onClick={() => setView('budget')}
+        >
+          Budget
+        </button>
+        <button
           className={`tab${view === 'settings' ? ' tab-active' : ''}`}
           onClick={() => setView('settings')}
         >
@@ -408,6 +462,14 @@ export default function App(): JSX.Element {
           onToggleIgnored={handleToggleIgnored}
           onDelete={handleDelete}
           onFill={handleFill}
+        />
+      </div>
+      <div className={`tab-panel${view !== 'budget' ? ' tab-panel-hidden' : ''}`}>
+        {toolbar}
+        <BudgetView
+          budgets={budgets}
+          availableCategories={availableCategories}
+          onChange={setBudgets}
         />
       </div>
       <div className={`tab-panel${view !== 'settings' ? ' tab-panel-hidden' : ''}`}>

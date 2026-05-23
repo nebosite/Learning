@@ -39,10 +39,34 @@ export interface TransactionRecord {
   ignored: boolean
 }
 
+/** A row in a budget — one category and its 12 monthly planned amounts. */
+export interface BudgetRow {
+  category: string
+  /** Always length 12, one entry per month of the budget. */
+  amounts: number[]
+}
+
+/** Which group a budget row currently belongs to. */
+export type BudgetSection = 'income' | 'bills' | 'discretionary'
+
+/** A user-defined plan: 12 months starting at startMonth, grouped into sections. */
+export interface Budget {
+  /** Unique within the file (case-insensitive). */
+  name: string
+  /** Starting month as YYYY-MM. The budget covers this month + 11 more. */
+  startMonth: string
+  /** Each section's rows, in display order; rows can be dragged between sections. */
+  income: BudgetRow[]
+  bills: BudgetRow[]
+  discretionary: BudgetRow[]
+}
+
 /** Persisted shape of the master file. Versioned so schema changes can be migrated. */
 export interface MasterFile {
   version: 1
   records: TransactionRecord[]
+  /** User-defined budgets. Absent in old files; treated as empty on load. */
+  budgets?: Budget[]
 }
 
 /** A row that could not be parsed from a CSV import. */
@@ -77,6 +101,8 @@ export interface Settings {
   categories: string[]
   /** Last window size. Absent until the window has been resized at least once. */
   window?: WindowSize
+  /** Absolute path of the last master file the user had open, if any. */
+  lastOpenedPath?: string
 }
 
 /** Commands the application menu sends from the main process to the renderer. */
@@ -105,6 +131,7 @@ export interface ElectronApi {
   writeMasterFile: (
     path: string,
     records: readonly TransactionRecord[],
+    budgets: readonly Budget[],
   ) => Promise<void>
   /** Show the unsaved-changes prompt (Save / Don't Save / Cancel). */
   confirmDiscard: () => Promise<DiscardChoice>
@@ -129,6 +156,8 @@ export interface ElectronApi {
   loadSettings: () => Promise<Settings>
   /** Persist the custom-category list. Other settings fields are left untouched. */
   saveCategories: (categories: string[]) => Promise<void>
+  /** Persist the path of the file currently open (null when there is none). */
+  setLastOpenedPath: (path: string | null) => Promise<void>
 }
 
 declare global {

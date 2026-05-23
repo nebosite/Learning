@@ -1,0 +1,273 @@
+.budget-panel {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 120px);
+}
+
+.budget-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+.budget-select-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.budget-select-label select {
+  font: inherit;
+  font-size: 13px;
+  padding: 2px 6px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  background: white;
+}
+
+.budget-range {
+  color: #666;
+  font-size: 12px;
+}
+
+.budget-empty {
+  margin: 0;
+  padding: 12px;
+  color: #666;
+  font-size: 13px;
+}
+
+.budget-table-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid #ccc;
+}
+
+.budget-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  width: 100%;
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+}
+
+.budget-table th,
+.budget-table td {
+  height: 21px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  border-right: 1px solid #ccc;
+  border-bottom: 1px solid #ccc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.budget-table thead th {
+  background: #f5f5f5;
+  font-weight: 600;
+  text-align: right;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.budget-cat-col {
+  width: 200px;
+  text-align: left !important;
+  font-weight: 600;
+}
+
+.budget-month-col {
+  width: 78px;
+}
+
+.budget-total-col {
+  width: 96px;
+  text-align: right;
+  font-weight: 600;
+}
+
+.budget-row th.budget-cat-col {
+  background: #fafafa;
+  cursor: grab;
+}
+
+.budget-row:active th.budget-cat-col {
+  cursor: grabbing;
+}
+
+.budget-row[draggable='true']:hover th.budget-cat-col {
+  background: #eef4ff;
+}
+
+/* Category name + two small "send to other section" buttons in the row head. */
+.budget-cat-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.budget-cat-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.budget-cat-buttons {
+  flex: none;
+  display: inline-flex;
+  gap: 2px;
+}
+
+.budget-jump-btn {
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  line-height: 1;
+  color: #1e3a8a;
+  background: #eff6ff;
+  border: 1px solid #93c5fd;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.budget-jump-btn:hover {
+  background: #dbeafe;
+}
+
+.budget-cell {
+  text-align: right;
+  cursor: text;
+}
+
+.budget-cell-editing {
+  padding: 0;
+}
+
+.budget-cell-editing input {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 0 8px;
+  font: inherit;
+  text-align: right;
+  border: 2px solid #3b82f6;
+  background: white;
+}
+
+/* Section header row (Income / Bills / Discretionary). */
+.budget-section-header th {
+  background: #dbeafe;
+  color: #1e3a8a;
+  font-weight: 700;
+  text-align: left;
+  padding: 4px 8px;
+}
+
+/* Section totals row. */
+.budget-section-totals th,
+.budget-section-totals td {
+  background: #ededed;
+  font-weight: 700;
+}
+
+.budget-section-totals td {
+  text-align: right;
+}
+
+/* Spacer row between sections. */
+.budget-spacer td {
+  height: 8px;
+  background: transparent;
+  border-right: none;
+  border-bottom: none;
+}
+
+.budget-empty-row td {
+  color: #999;
+  font-style: italic;
+  text-align: center;
+  height: 28px;
+}
+
+/* "New Budget" modal. */
+.budget-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.budget-modal {
+  background: white;
+  width: min(420px, 92vw);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+  padding: 18px 22px 16px;
+  font-family: system-ui, sans-serif;
+}
+
+.budget-modal-title {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.budget-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.budget-modal-field input {
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 8px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+}
+
+.budget-modal-error {
+  color: #c00;
+  font-size: 12px;
+}
+
+.budget-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.budget-modal-actions button {
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 14px;
+  border: 1px solid #bbb;
+  border-radius: 3px;
+  background: white;
+  cursor: pointer;
+}
+
+.budget-modal-actions button:disabled {
+  color: #999;
+  cursor: default;
+}
+
+.budget-modal-actions button:not(:disabled):hover {
+  background: #f5f5f5;
+}

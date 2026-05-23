@@ -58,5 +58,8 @@ function isNodeFsError(e: unknown): e is NodeJS.ErrnoException {
 function isMasterFileShape(v: unknown): v is MasterFile {
   if (typeof v !== 'object' || v === null) return false
   const obj = v as Record<string, unknown>
-  return typeof obj.version === 'number' && Array.isArray(obj.records)
+  if (typeof obj.version !== 'number' || !Array.isArray(obj.records)) return false
+  // `budgets` is optional; if present it must be an array. Older files written
+  // before budgets existed simply omit the field.
+  return obj.budgets === undefined || Array.isArray(obj.budgets)
 }

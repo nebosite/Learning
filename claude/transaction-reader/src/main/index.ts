@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron'
 import { readFile } from 'fs/promises'
 import { join } from 'path'
 import type {
+  Budget,
   DiscardChoice,
   ImportResult,
   MasterFile,
@@ -231,10 +232,16 @@ app.whenReady().then(async () => {
 
   ipcMain.handle(
     'file:write',
-    async (_event, path: string, records: TransactionRecord[]): Promise<void> => {
+    async (
+      _event,
+      path: string,
+      records: TransactionRecord[],
+      budgets: Budget[],
+    ): Promise<void> => {
       const file: MasterFile = {
         version: 1,
         records: sortRecordsByDateDescending(records),
+        budgets,
       }
       await saveMasterFile(path, file)
     },
@@ -294,6 +301,18 @@ app.whenReady().then(async () => {
     'settings-save-categories',
     async (_event, categories: string[]): Promise<void> => {
       await updateSettings((s) => ({ ...s, categories }))
+    },
+  )
+
+  ipcMain.handle(
+    'settings-set-last-opened',
+    async (_event, path: string | null): Promise<void> => {
+      await updateSettings((s) => {
+        const next: Settings = { ...s }
+        if (path && path.trim() !== '') next.lastOpenedPath = path
+        else delete next.lastOpenedPath
+        return next
+      })
     },
   )
 
