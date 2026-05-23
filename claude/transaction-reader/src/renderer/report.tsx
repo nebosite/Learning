@@ -1,9 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { OriginalTransaction, TransactionRecord } from '../shared/types'
 import { effectiveDate, effectiveValue } from '../shared/records'
-import type { FilterCriteria } from './filter'
-import { recordPassesFilter } from './filter'
-import { Grid, TEXT_FIELDS, formatAmount } from './grid'
+import { Grid, formatAmount } from './grid'
 import './report.css'
 
 /** Bucket for records whose effective category is blank. */
@@ -28,6 +26,33 @@ function monthOf(record: TransactionRecord): string {
 function formatMonth(ym: string): string {
   const [year, month] = ym.split('-')
   return `${MONTH_NAMES[Number(month)] ?? month} ${year}`
+}
+
+function toIsoDate(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/**
+ * The Spending Analysis window: exactly twelve complete calendar months,
+ * ending with the previous month (the in-progress current month is excluded).
+ * E.g. on any day in May 2026 the window is 2025-05-01 through 2026-04-30.
+ */
+export function defaultSpendingWindow(now: Date = new Date()): {
+  from: string
+  to: string
+} {
+  const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+  const end = new Date(firstOfMonth)
+  end.setDate(end.getDate() - 1)
+  const start = new Date(
+    firstOfMonth.getFullYear() - 1,
+    firstOfMonth.getMonth(),
+    1,
+  )
+  return { from: toIsoDate(start), to: toIsoDate(end) }
 }
 
 /** Which column the category rows are sorted by. */
@@ -72,8 +97,6 @@ interface SelectedCell {
 interface ReportProps {
   records: TransactionRecord[]
   categories: string[]
-  /** The shared app-wide filter; the report counts only rows that pass it. */
-  filter: FilterCriteria
   active: boolean
   resortKey: number
   onSetField: (
@@ -94,7 +117,6 @@ interface ReportProps {
 export function Report({
   records,
   categories,
-  filter,
   active,
   resortKey,
   onSetField,
@@ -106,6 +128,10 @@ export function Report({
   const [selected, setSelected] = useState<SelectedCell | null>(null)
   const [sort, setSort] = useState<PivotSort | null>(null)
 
+  // Capture the spending window once on mount so the boundaries don't drift
+  // as the user works (e.g. across midnight or a month rollover).
+  const spendingWindow = useMemo(() => defaultSpendingWindow(), [])
+
   // Cycle a column's sort: unsorted -> ascending -> descending -> unsorted.
   function cycleSort(field: SortField): void {
     setSort((prev) => {
@@ -115,14 +141,19 @@ export function Report({
     })
   }
 
-  // Indices of the records the report counts: non-ignored and filter-passing.
+  // Indices of the records the report counts: non-ignored, and with an
+  // effective date inside the spending window (last ~12 months, ending right
+  // before the start of the current month).
   const visibleIndices = useMemo(() => {
     const out: number[] = []
     records.forEach((r, i) => {
-      if (!r.ignored && recordPassesFilter(r, filter, TEXT_FIELDS)) out.push(i)
+      if (r.ignored) return
+      const date = effectiveDate(r)
+      if (date < spendingWindow.from || date > spendingWindow.to) return
+      out.push(i)
     })
     return out
-  }, [records, filter])
+  }, [records, spendingWindow])
 
   // The pivot table: months (columns), categories (rows), summed amounts, and
   // per-row / per-column / grand totals.

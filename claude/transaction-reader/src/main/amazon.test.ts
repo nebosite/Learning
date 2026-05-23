@@ -28,9 +28,9 @@ describe('parseAmazonCsv', () => {
     expect(rows).toHaveLength(1)
     expect(rows[0].parsed).toEqual({
       date: '2026-05-07',
-      merchant: 'unknown',
-      category: 'unknown',
-      account: 'amazon',
+      merchant: 'NA',
+      category: '',
+      account: 'Amazon',
       originalStatement: 'GiftExpress 24-Pack',
       notes: '',
       amount: -27.26,

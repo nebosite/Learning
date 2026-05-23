@@ -84,9 +84,9 @@ export function parseAmazonCsv(text: string): ParseResult {
 
       const parsed: OriginalTransaction = {
         date,
-        merchant: 'unknown',
-        category: 'unknown',
-        account: 'amazon',
+        merchant: 'NA',
+        category: '',
+        account: 'Amazon',
         originalStatement: items,
         notes: '',
         amount,

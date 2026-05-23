@@ -22,8 +22,11 @@ export type TransactionOverrides = Partial<OriginalTransaction>
 /**
  * One row in the master file.
  *
- * `key` is the verbatim CSV line text from the source file and serves as the
- * dedup identity — re-importing the same export produces identical keys.
+ * `key` is the canonical dedup identity (see `canonicalRecordKey`): a stable
+ * combination of date, merchant, account, originalStatement, notes, and
+ * amount from the parsed original. The same logical transaction produces the
+ * same key across import formats and across changes to ignored / category /
+ * tag / owner fields.
  *
  * `ignored` is set once: transfer detection runs on freshly-imported records
  * only, never re-evaluates existing records, and the user can toggle it

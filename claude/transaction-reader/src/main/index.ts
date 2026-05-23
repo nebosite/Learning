@@ -9,7 +9,7 @@ import type {
   Settings,
   TransactionRecord,
 } from '../shared/types'
-import { sortRecordsByDateDescending } from '../shared/records'
+import { canonicalRecordKey, sortRecordsByDateDescending } from '../shared/records'
 import { importCsvFile } from './import'
 import { loadMasterFile, saveMasterFile } from './master-file'
 import { loadSettings, saveSettings } from './settings-file'
@@ -215,7 +215,17 @@ app.whenReady().then(async () => {
   ipcMain.handle(
     'file:read',
     async (_event, path: string): Promise<MasterFile> => {
-      return loadMasterFile(path)
+      // Recompute every record's key from its parsed original fields, so old
+      // files whose keys were the raw line text still dedupe against new
+      // imports. New canonical keys persist the next time the user saves.
+      const file = await loadMasterFile(path)
+      return {
+        ...file,
+        records: file.records.map((r) => ({
+          ...r,
+          key: canonicalRecordKey(r.original),
+        })),
+      }
     },
   )
 

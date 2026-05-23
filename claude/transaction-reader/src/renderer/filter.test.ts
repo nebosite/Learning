@@ -48,7 +48,7 @@ describe('recordMatchesFilter', () => {
 
   it('uses the overridden value when one is present', () => {
     const r = rec({ merchant: 'AMZN MKTP' }, { merchant: 'Amazon' })
-    expect(recordMatchesFilter(r, 'amazon', FIELDS)).toBe(true)
+    expect(recordMatchesFilter(r, 'Amazon', FIELDS)).toBe(true)
     expect(recordMatchesFilter(r, 'mktp', FIELDS)).toBe(false)
   })
 

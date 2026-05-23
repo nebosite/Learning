@@ -1,5 +1,5 @@
 import type { MasterFile, TransactionRecord } from '../shared/types'
-import { sortRecordsByDateDescending } from '../shared/records'
+import { canonicalRecordKey, sortRecordsByDateDescending } from '../shared/records'
 import type { ParsedRow } from './csv-format'
 
 export interface MergeResult {
@@ -11,11 +11,11 @@ export interface MergeResult {
 /**
  * Merge freshly-parsed rows into an existing master.
  *
- * Dedup is count-matched against the master, not within the incoming batch:
- * if the master already holds N records with a given key, the first N
- * incoming rows with that key are skipped; any beyond that are added as new
- * records. This keeps "re-import the same file" idempotent while preserving
- * legitimate duplicates that appear inside a single export.
+ * Dedup is count-matched on the canonical record key (see
+ * `canonicalRecordKey`): if the master already holds N records with a given
+ * key, the first N incoming rows with that key are skipped; any beyond that
+ * are added as new records. This keeps "re-import the same file" idempotent
+ * while preserving legitimate duplicates that appear inside a single export.
  *
  * The input master is not mutated. The returned master's records are sorted
  * by effective date (overrides.date ?? original.date), newest first.
@@ -33,13 +33,14 @@ export function mergeIntoMaster(
   const skipped: ParsedRow[] = []
 
   for (const row of parsed) {
-    const count = remainingByKey.get(row.raw) ?? 0
+    const key = canonicalRecordKey(row.parsed)
+    const count = remainingByKey.get(key) ?? 0
     if (count > 0) {
-      remainingByKey.set(row.raw, count - 1)
+      remainingByKey.set(key, count - 1)
       skipped.push(row)
     } else {
       added.push({
-        key: row.raw,
+        key,
         original: row.parsed,
         overrides: {},
         ignored: false,

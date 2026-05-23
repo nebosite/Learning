@@ -6,8 +6,6 @@ import type {
   TransactionRecord,
 } from '../shared/types'
 import { effectiveValue } from '../shared/records'
-import type { FilterCriteria } from './filter'
-import { EMPTY_FILTER } from './filter'
 import { Grid } from './grid'
 import { HelpModal } from './help-modal'
 import { Report } from './report'
@@ -34,8 +32,6 @@ export default function App(): JSX.Element {
   const [categories, setCategories] = useState<string[]>([])
   // Bumped by the Resort button to make the grid re-sort/re-filter on demand.
   const [resortKey, setResortKey] = useState(0)
-  // The transactions grid's filter, mirrored here so the Report tab shares it.
-  const [reportFilter, setReportFilter] = useState<FilterCriteria>(EMPTY_FILTER)
   // The file the records were last opened from or saved to; null = untitled.
   const [currentPath, setCurrentPath] = useState<string | null>(null)
   // Whether the in-app Help dialog (rendered README) is showing.
@@ -365,7 +361,7 @@ export default function App(): JSX.Element {
           className={`tab${view === 'report' ? ' tab-active' : ''}`}
           onClick={() => setView('report')}
         >
-          Report
+          Spending analysis
         </button>
         <button
           className={`tab${view === 'settings' ? ' tab-active' : ''}`}
@@ -393,7 +389,6 @@ export default function App(): JSX.Element {
           categories={categories}
           active={view === 'transactions'}
           resortKey={resortKey}
-          onFilterChange={setReportFilter}
           onSetField={handleSetField}
           onRemoveOverride={handleRemoveOverride}
           onToggleIgnored={handleToggleIgnored}
@@ -406,7 +401,6 @@ export default function App(): JSX.Element {
         <Report
           records={history.present}
           categories={categories}
-          filter={reportFilter}
           active={view === 'report'}
           resortKey={resortKey}
           onSetField={handleSetField}

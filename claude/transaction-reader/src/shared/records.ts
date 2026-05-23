@@ -1,6 +1,25 @@
 import type { IsoDate, OriginalTransaction, TransactionRecord } from './types'
 
 /**
+ * Stable dedup identity for a record, derived from the parsed original fields
+ * rather than the raw line text. Two records with the same date, merchant,
+ * account, original statement, notes, and amount produce the same key — so
+ * the same logical transaction dedupes across input formats (Monarch TSV,
+ * Monarch CSV, Amazon CSV) and across export changes that touch other fields
+ * (category, tags, owner).
+ */
+export function canonicalRecordKey(original: OriginalTransaction): string {
+  return [
+    original.date,
+    original.merchant,
+    original.account,
+    original.originalStatement,
+    original.notes,
+    String(original.amount),
+  ].join('\t')
+}
+
+/**
  * The effective value of a field on a record: override wins over original.
  * `undefined` in the override (missing key) falls through to the original.
  */
