@@ -122,10 +122,15 @@ function SortButton<F extends string>({
   )
 }
 
-interface SelectedCell {
-  category: string
-  month: string
-}
+/**
+ * What the user has clicked in the pivot table. A `cell` selection shows the
+ * transactions for one (category, month); a `row` selection (triggered by
+ * clicking the category name) shows every transaction in that category across
+ * the entire window.
+ */
+type Selection =
+  | { kind: 'cell'; category: string; month: string }
+  | { kind: 'row'; category: string }
 
 interface MerchantTotal {
   /** Raw merchant key — '' is preserved so it round-trips through the set. */
@@ -164,7 +169,7 @@ export function Report({
   onDelete,
   onFill,
 }: ReportProps): JSX.Element {
-  const [selected, setSelected] = useState<SelectedCell | null>(null)
+  const [selected, setSelected] = useState<Selection | null>(null)
   const [pivotSort, setPivotSort] = useState<SortState<PivotSortField> | null>(null)
   // The merchants the user has explicitly chosen to focus on. An empty set
   // means "no filter" — all merchants pass through. The Clear button resets
@@ -307,7 +312,8 @@ export function Report({
     if (!selected) return []
     return pivotIndices.filter((i) => {
       const r = records[i]
-      return categoryOf(r) === selected.category && monthOf(r) === selected.month
+      if (categoryOf(r) !== selected.category) return false
+      return selected.kind === 'row' ? true : monthOf(r) === selected.month
     })
   }, [selected, pivotIndices, records])
 
@@ -384,16 +390,29 @@ export function Report({
               <tbody>
                 {sortedCategories.map((cat, idx) => {
                   const total = table.rowTotals.get(cat) ?? 0
+                  const rowSelected =
+                    selected?.kind === 'row' && selected.category === cat
                   return (
                     <tr
                       key={cat}
                       className={idx % 2 === 0 ? 'report-row-even' : 'report-row-odd'}
                     >
-                      <th className="report-rowhead">{cat}</th>
+                      <th
+                        className={`report-rowhead report-rowhead-clickable${
+                          rowSelected ? ' report-cell-selected' : ''
+                        }`}
+                        onClick={() => setSelected({ kind: 'row', category: cat })}
+                        title="Select all transactions in this category"
+                      >
+                        {cat}
+                      </th>
                       {table.months.map((m) => {
                         const value = table.sums.get(cat)?.get(m)
-                        const isSelected =
-                          selected?.category === cat && selected?.month === m
+                        const cellSelected =
+                          selected?.kind === 'cell' &&
+                          selected.category === cat &&
+                          selected.month === m
+                        const isSelected = cellSelected || rowSelected
                         const classes = ['report-cell']
                         if (value === undefined) classes.push('report-cell-empty')
                         if (isSelected) classes.push('report-cell-selected')
@@ -406,7 +425,12 @@ export function Report({
                             onClick={
                               value === undefined
                                 ? undefined
-                                : () => setSelected({ category: cat, month: m })
+                                : () =>
+                                    setSelected({
+                                      kind: 'cell',
+                                      category: cat,
+                                      month: m,
+                                    })
                             }
                           >
                             {value === undefined ? '' : formatAmount(value)}
@@ -530,7 +554,11 @@ export function Report({
       <div className="report-edit">
         {selected ? (
           <Grid
-            key={`${selected.category} ${selected.month}`}
+            key={
+              selected.kind === 'row'
+                ? `${selected.category} row`
+                : `${selected.category} ${selected.month}`
+            }
             records={subRecords}
             categories={categories}
             active={active}

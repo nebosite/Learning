@@ -112,6 +112,11 @@
   z-index: 1;
 }
 
+/* Category-name rowheads in the body are clickable to select the whole row. */
+.report-rowhead-clickable {
+  cursor: pointer;
+}
+
 .report-cell {
   text-align: right;
   cursor: pointer;
