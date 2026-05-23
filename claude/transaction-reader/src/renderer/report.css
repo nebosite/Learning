@@ -4,12 +4,28 @@
   height: calc(100vh - 120px);
 }
 
-.report-table-wrap {
+/* The pivot table and the merchant selector share one horizontal row,
+   capped at half the panel height. Each child scrolls independently. */
+.report-top-row {
+  display: flex;
+  gap: 10px;
   flex: 0 1 auto;
   max-height: 50%;
+  min-height: 0;
+  margin-bottom: 10px;
+}
+
+.report-table-wrap {
+  flex: 1;
+  min-width: 0;
   overflow: auto;
   border: 1px solid #ccc;
-  margin-bottom: 10px;
+}
+
+.report-merchant-wrap {
+  flex: 0 0 380px;
+  overflow: auto;
+  border: 1px solid #ccc;
 }
 
 .report-empty,
@@ -55,15 +71,21 @@
   z-index: 2;
 }
 
-/* Headers carrying a sort button lay their label and button out in a row. */
-.report-sortable {
+/* Sort-button + label live inside a flex wrapper so the surrounding <th>
+   keeps its native table-cell layout (avoiding a stacked-cells regression
+   that display:flex on the <th> itself was causing). */
+.sort-head {
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
-.report-month.report-sortable {
+.sort-head-right {
   justify-content: flex-end;
+}
+
+.sort-head-center {
+  justify-content: center;
 }
 
 .report-sort-btn {
@@ -117,6 +139,11 @@
   background: #dbeafe;
 }
 
+/* Negative amounts show in red, in both the pivot and the merchant panel. */
+.amount-negative {
+  color: #c00;
+}
+
 /* A selected cell paints its own background over the row color. */
 .report-cell-selected {
   background: #3b82f6;
@@ -138,6 +165,91 @@
 
 .report-totals-row td {
   text-align: right;
+}
+
+/* Merchant selector. */
+.merchant-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  width: 100%;
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+}
+
+.merchant-table th,
+.merchant-table td {
+  height: 21px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  border-right: 1px solid #ccc;
+  border-bottom: 1px solid #ccc;
+  white-space: nowrap;
+}
+
+.merchant-table th {
+  background: #f5f5f5;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.merchant-check-col {
+  width: 32px;
+  text-align: center;
+  padding: 0 4px;
+}
+
+.merchant-name-col {
+  text-align: left;
+}
+
+.merchant-name-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.merchant-total-col,
+.merchant-total-cell {
+  width: 96px;
+  text-align: right;
+}
+
+.merchant-clear-row,
+.merchant-clear-row td {
+  background: #ededed;
+}
+
+.merchant-clear-cell {
+  padding: 4px 8px;
+}
+
+.merchant-clear-btn {
+  font: inherit;
+  font-size: 12px;
+  padding: 2px 10px;
+  background: white;
+  border: 1px solid #bbb;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.merchant-clear-btn:hover:not(:disabled) {
+  background: #f5f5f5;
+}
+
+.merchant-clear-btn:disabled {
+  color: #999;
+  cursor: default;
+}
+
+.merchant-row-even {
+  background: #eff6ff;
+}
+
+.merchant-row-odd {
+  background: #dbeafe;
 }
 
 /* The embedded edit grid fills the space left below the report table. */
