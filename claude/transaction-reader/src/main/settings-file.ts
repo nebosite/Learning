@@ -1,6 +1,6 @@
-import { mkdir, readFile, rename, writeFile } from 'fs/promises'
-import { dirname } from 'path'
+import { readFile } from 'fs/promises'
 import type { Settings } from '../shared/types'
+import { saveAtomic } from './atomic-write'
 
 const CURRENT_VERSION = 1
 
@@ -40,14 +40,11 @@ export async function loadSettings(path: string): Promise<Settings> {
 }
 
 /**
- * Write the settings file atomically: serialize to `<path>.tmp` first, then
- * rename over the real file.
+ * Write the settings file atomically. No backup is created here; the main
+ * process snapshots the settings file on blur / close (see `backupCurrent`).
  */
 export async function saveSettings(path: string, settings: Settings): Promise<void> {
-  await mkdir(dirname(path), { recursive: true })
-  const tmpPath = `${path}.tmp`
-  await writeFile(tmpPath, JSON.stringify(settings, null, 2), 'utf8')
-  await rename(tmpPath, path)
+  await saveAtomic(path, JSON.stringify(settings, null, 2))
 }
 
 function isNodeFsError(e: unknown): e is NodeJS.ErrnoException {

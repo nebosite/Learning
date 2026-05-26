@@ -158,6 +158,10 @@ export interface ElectronApi {
   saveCategories: (categories: string[]) => Promise<void>
   /** Persist the path of the file currently open (null when there is none). */
   setLastOpenedPath: (path: string | null) => Promise<void>
+  /** Absolute path of the app's settings.json file. */
+  getSettingsPath: () => Promise<string>
+  /** Open the OS file explorer at the given path, with the file selected. */
+  showInFolder: (path: string) => Promise<void>
 }
 
 declare global {

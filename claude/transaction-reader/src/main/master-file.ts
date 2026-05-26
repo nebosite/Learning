@@ -1,6 +1,6 @@
-import { mkdir, readFile, rename, writeFile } from 'fs/promises'
-import { dirname } from 'path'
+import { readFile } from 'fs/promises'
 import type { MasterFile } from '../shared/types'
+import { saveWithBackup } from './atomic-write'
 
 const CURRENT_VERSION = 1
 
@@ -40,15 +40,11 @@ export async function loadMasterFile(path: string): Promise<MasterFile> {
 }
 
 /**
- * Write the master file atomically: serialize to `<path>.tmp` first, then
- * rename over the real file. A crash mid-write leaves the previous master
- * intact (the tmp file may be left behind, but the canonical file is safe).
+ * Write the master file atomically and keep the prior version in a `.bak`
+ * sidecar. See `saveWithBackup` for the exact sequence.
  */
 export async function saveMasterFile(path: string, file: MasterFile): Promise<void> {
-  await mkdir(dirname(path), { recursive: true })
-  const tmpPath = `${path}.tmp`
-  await writeFile(tmpPath, JSON.stringify(file, null, 2), 'utf8')
-  await rename(tmpPath, path)
+  await saveWithBackup(path, JSON.stringify(file, null, 2))
 }
 
 function isNodeFsError(e: unknown): e is NodeJS.ErrnoException {

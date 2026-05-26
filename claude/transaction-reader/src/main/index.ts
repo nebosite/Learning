@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron'
 import { readFile } from 'fs/promises'
 import { join } from 'path'
 import type {
@@ -11,6 +11,7 @@ import type {
   TransactionRecord,
 } from '../shared/types'
 import { canonicalRecordKey, sortRecordsByDateDescending } from '../shared/records'
+import { backupCurrent } from './atomic-write'
 import { importCsvFile } from './import'
 import { loadMasterFile, saveMasterFile } from './master-file'
 import { loadSettings, saveSettings } from './settings-file'
@@ -55,16 +56,42 @@ function settingsFilePath(): string {
   return join(app.getPath('userData'), 'settings.json')
 }
 
-// Settings updates are serialized through this chain so that a window-resize
-// save and a category save never interleave their read-modify-write steps.
+// Settings updates and backup snapshots are serialized through this chain so
+// that a window-resize save and a category save never interleave their
+// read-modify-write steps, and a backup never reads a half-written file.
 let settingsWriteChain: Promise<void> = Promise.resolve()
+
+// True when settings have been written since the last backup snapshot. The
+// app snapshots the file (via backupCurrent) on blur / close, then resets.
+let settingsDirty = false
 
 function updateSettings(mutate: (current: Settings) => Settings): Promise<void> {
   const next = settingsWriteChain.then(async () => {
     const current = await loadSettings(settingsFilePath())
     await saveSettings(settingsFilePath(), mutate(current))
+    settingsDirty = true
   })
   // Keep the chain alive even if one update fails; callers still see `next`.
+  settingsWriteChain = next.catch(() => {})
+  return next
+}
+
+/**
+ * Snapshot the settings file as a timestamped backup, but only if the file
+ * has changed since the last snapshot. Runs through the same write-chain so
+ * it never overlaps an in-flight `updateSettings`.
+ */
+function backupSettingsIfDirty(): Promise<void> {
+  const next = settingsWriteChain.then(async () => {
+    if (!settingsDirty) return
+    settingsDirty = false
+    try {
+      await backupCurrent(settingsFilePath())
+    } catch (e) {
+      settingsDirty = true
+      console.warn('Settings backup failed; will retry on next trigger:', e)
+    }
+  })
   settingsWriteChain = next.catch(() => {})
   return next
 }
@@ -161,6 +188,13 @@ async function createWindow(): Promise<BrowserWindow> {
     if (allowClose) return
     event.preventDefault()
     win.webContents.send('app:close-request')
+  })
+
+  // Snapshot the settings file whenever the window loses focus (cheap, only
+  // fires on real user actions), and again at close approval. Both paths are
+  // no-ops when nothing has changed since the last snapshot.
+  win.on('blur', () => {
+    void backupSettingsIfDirty()
   })
 
   if (process.env['ELECTRON_RENDERER_URL']) {
@@ -273,7 +307,9 @@ app.whenReady().then(async () => {
     },
   )
 
-  ipcMain.on('app:approve-close', (event) => {
+  ipcMain.on('app:approve-close', async (event) => {
+    // Final settings snapshot before the window actually goes away.
+    await backupSettingsIfDirty()
     allowClose = true
     const win = BrowserWindow.fromWebContents(event.sender)
     if (win) win.close()
@@ -303,6 +339,14 @@ app.whenReady().then(async () => {
       await updateSettings((s) => ({ ...s, categories }))
     },
   )
+
+  ipcMain.handle('settings:get-path', async (): Promise<string> => {
+    return settingsFilePath()
+  })
+
+  ipcMain.handle('shell:show-in-folder', async (_event, path: string): Promise<void> => {
+    shell.showItemInFolder(path)
+  })
 
   ipcMain.handle(
     'settings-set-last-opened',

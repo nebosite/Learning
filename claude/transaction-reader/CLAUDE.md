@@ -119,3 +119,45 @@ A record is auto-ignored when it pairs with another record where the amounts are
 ### Master Transaction File
 
 The canonical persisted format should be defined in `src/shared/types.ts`. Keep it stable — downstream consumers (spreadsheets, scripts) depend on its shape. Schema changes should be versioned and migrated, not silently altered.
+
+### Persistence and backups
+
+All on-disk writes go through `src/main/atomic-write.ts`, which exposes three
+helpers; pick the one whose backup cadence matches the file's write cadence.
+
+**Generational, sortable, never deleted.** Every backup file lives at
+`<path>.<stamp>.bak` where `<stamp>` is a Windows-safe,
+lexicographically-sortable ISO timestamp (e.g.
+`master.json.2026-05-26T10-15-30-123.bak`). Listing the directory and sorting
+the names sorts them chronologically. Pruning is intentionally not done in
+the atomic-write layer — if disk usage becomes a concern, add a trim pass
+inside `atomic-write.ts` rather than spreading retention logic across
+callers.
+
+**Helpers:**
+
+- `saveAtomic(path, content)` — atomic write (tmp + rename), no backup.
+- `saveWithBackup(path, content)` — atomic write, AND move the previous
+  canonical file to a timestamped `.bak` before promoting the new content.
+  Use when every save deserves to be preserved.
+- `backupCurrent(path)` — snapshot the existing canonical file as a
+  timestamped `.bak` *without changing it*. Returns the backup path (or
+  `null` if there was nothing to back up). Use when the backup cadence is
+  decoupled from the write cadence.
+
+**Per-file policy:**
+
+- **Master file** (`master.json`): `saveWithBackup` on every save. Each user
+  Save / Save As preserves the prior version.
+- **Settings file** (`settings.json`): `saveAtomic` on every change (writes
+  are frequent — every category edit, window resize, last-opened-path
+  update). The main process tracks a `settingsDirty` flag and calls
+  `backupCurrent` only on window **blur** and on **close approval**, so the
+  settings backup chain reflects user-visible "sessions of activity" rather
+  than every keystroke.
+
+**Recovery convention**: list the directory, sort, pick the `.bak` you want
+(newest is alphabetically last), and rename it over the canonical path.
+
+Any new persistence should route through these helpers rather than calling
+`fs.writeFile` directly.

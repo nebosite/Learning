@@ -34,6 +34,8 @@ if (inDom) {
       loadSettings: vi.fn(async () => ({ version: 1, categories: [] })),
       saveCategories: vi.fn(async () => undefined),
       setLastOpenedPath: vi.fn(async () => undefined),
+      getSettingsPath: vi.fn(async () => '/tmp/settings.json'),
+      showInFolder: vi.fn(async () => undefined),
     }
   })
 

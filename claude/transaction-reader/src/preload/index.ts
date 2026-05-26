@@ -52,6 +52,9 @@ const api: ElectronApi = {
     ipcRenderer.invoke('settings-save-categories', categories),
   setLastOpenedPath: (path: string | null): Promise<void> =>
     ipcRenderer.invoke('settings-set-last-opened', path),
+  getSettingsPath: (): Promise<string> => ipcRenderer.invoke('settings:get-path'),
+  showInFolder: (path: string): Promise<void> =>
+    ipcRenderer.invoke('shell:show-in-folder', path),
 }
 
 contextBridge.exposeInMainWorld('api', api)

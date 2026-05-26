@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './settings.css'
 
 interface SettingsViewProps {
@@ -13,6 +13,17 @@ export function SettingsView({
   onDeleteCategory,
 }: SettingsViewProps): JSX.Element {
   const [input, setInput] = useState('')
+  const [settingsPath, setSettingsPath] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    window.api.getSettingsPath().then((p) => {
+      if (!cancelled) setSettingsPath(p)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   function submit(): void {
     const trimmed = input.trim()
@@ -27,6 +38,16 @@ export function SettingsView({
 
   return (
     <div className="settings">
+      {settingsPath && (
+        <button
+          type="button"
+          className="settings-path-note"
+          onClick={() => void window.api.showInFolder(settingsPath)}
+          title="Open this file in the OS file explorer"
+        >
+          Settings file: {settingsPath}
+        </button>
+      )}
       <h2>Custom Categories</h2>
       <div className="settings-add">
         <input
