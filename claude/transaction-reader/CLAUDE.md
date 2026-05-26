@@ -52,9 +52,34 @@ npm run dev        # Start Electron app in development mode (hot reload)
 npm run build      # Compile TypeScript and bundle for production
 npm run lint       # Run ESLint across src/
 npm run typecheck  # Run tsc --noEmit to check types without emitting
-npm test           # Run test suite
-npm run test:unit <path>  # Run a single test file
+npm test           # Run test suite (vitest)
+npm start          # Run the built app via electron .
 ```
+
+## Testing
+
+Every component and every non-trivial pure module should have tests in a
+sibling `*.test.ts` / `*.test.tsx` file. The bar is "would I notice if this
+broke without clicking through the app" — bias toward tests for date math,
+parsers, reducers, sort/filter predicates, edit-mode behavior, and selection
+state machines.
+
+- **Main / shared / pure logic**: vitest in the default `node` environment.
+  Examples: `csv.test.ts`, `merge.test.ts`, `sort.test.ts`, `filter.test.ts`,
+  `virtual.test.ts`.
+- **React components**: vitest in `jsdom` with `@testing-library/react`. The
+  glob `src/renderer/**` is mapped to jsdom in `vitest.config.ts`; the global
+  setup (`src/test-setup.ts`) loads `@testing-library/jest-dom` matchers,
+  stubs `window.api` per test, and runs `cleanup()` between tests.
+- **Where pure logic lives inside a component file**, export it so tests can
+  exercise it directly (see `defaultSpendingWindow`, `monthsInWindow`, the
+  budget `moveRow` / `updateCell` helpers). Add the component-level test
+  on top of that, scoped to behaviors that only exist when the React glue
+  is present (edit-and-advance, selection, drag handlers).
+
+When adding a new component, add at least a smoke test that renders it with
+representative props and asserts one observable behavior. When fixing a
+component bug, add the regression test first.
 
 ## Architecture Notes
 

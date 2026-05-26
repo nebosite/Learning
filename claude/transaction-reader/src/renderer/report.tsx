@@ -68,7 +68,7 @@ export function defaultSpendingWindow(now: Date = new Date()): {
 }
 
 /** Enumerate the YYYY-MM months between window.from and window.to, inclusive. */
-function monthsInWindow(window: { from: string; to: string }): string[] {
+export function monthsInWindow(window: { from: string; to: string }): string[] {
   const [fy, fm] = window.from.split('-').slice(0, 2).map(Number)
   const [ty, tm] = window.to.split('-').slice(0, 2).map(Number)
   const out: string[] = []

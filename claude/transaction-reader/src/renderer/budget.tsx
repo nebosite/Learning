@@ -14,13 +14,13 @@ const MONTH_NAMES = [
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ]
 
-function addMonths(ym: string, n: number): string {
+export function addMonths(ym: string, n: number): string {
   const [y, m] = ym.split('-').map(Number)
   const date = new Date(y, m - 1 + n, 1)
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
 }
 
-function monthsForBudget(startMonth: string): string[] {
+export function monthsForBudget(startMonth: string): string[] {
   return Array.from({ length: 12 }, (_, i) => addMonths(startMonth, i))
 }
 
@@ -29,11 +29,11 @@ function formatMonth(ym: string): string {
   return `${MONTH_NAMES[Number(m) - 1] ?? m} ${y.slice(2)}`
 }
 
-function rowTotal(row: BudgetRow): number {
+export function rowTotal(row: BudgetRow): number {
   return row.amounts.reduce((s, a) => s + a, 0)
 }
 
-function sectionMonthlyTotals(rows: BudgetRow[]): number[] {
+export function sectionMonthlyTotals(rows: BudgetRow[]): number[] {
   const out = new Array<number>(12).fill(0)
   for (const r of rows) {
     for (let i = 0; i < 12; i++) out[i] += r.amounts[i] ?? 0
@@ -41,7 +41,7 @@ function sectionMonthlyTotals(rows: BudgetRow[]): number[] {
   return out
 }
 
-function sectionGrandTotal(rows: BudgetRow[]): number {
+export function sectionGrandTotal(rows: BudgetRow[]): number {
   let s = 0
   for (const r of rows) for (const a of r.amounts) s += a
   return s
@@ -52,12 +52,12 @@ function currentMonth(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
-interface DragSource {
+export interface DragSource {
   section: BudgetSection
   index: number
 }
 
-function moveRow(
+export function moveRow(
   budget: Budget,
   src: DragSource,
   target: { section: BudgetSection; index: number },
@@ -75,7 +75,7 @@ function moveRow(
   return next
 }
 
-function updateCell(
+export function updateCell(
   budget: Budget,
   section: BudgetSection,
   rowIdx: number,
