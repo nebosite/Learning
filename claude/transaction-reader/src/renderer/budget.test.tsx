@@ -5,6 +5,7 @@ import type { Budget, BudgetRow, BudgetSection } from '../shared/types'
 import {
   BudgetView,
   addMonths,
+  deleteRow,
   monthsForBudget,
   moveRow,
   rowTotal,
@@ -115,6 +116,33 @@ describe('moveRow', () => {
   })
 })
 
+describe('deleteRow', () => {
+  it('drops the targeted row from the section', () => {
+    const b = makeBudget({
+      discretionary: [makeRow('a'), makeRow('b'), makeRow('c')],
+    })
+    const next = deleteRow(b, 'discretionary', 1)
+    expect(next.discretionary.map((r) => r.category)).toEqual(['a', 'c'])
+  })
+
+  it('leaves other sections untouched', () => {
+    const b = makeBudget({
+      income: [makeRow('Salary')],
+      discretionary: [makeRow('Food')],
+    })
+    const next = deleteRow(b, 'discretionary', 0)
+    expect(next.income.map((r) => r.category)).toEqual(['Salary'])
+    expect(next.discretionary).toEqual([])
+  })
+
+  it('does not mutate the input budget', () => {
+    const b = makeBudget({ discretionary: [makeRow('a'), makeRow('b')] })
+    const before = JSON.parse(JSON.stringify(b))
+    deleteRow(b, 'discretionary', 0)
+    expect(b).toEqual(before)
+  })
+})
+
 describe('updateCell', () => {
   it('sets one cell and leaves siblings untouched', () => {
     const b = makeBudget({
@@ -183,6 +211,37 @@ describe('BudgetView', () => {
 
     expect(screen.getByText(/already exists/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled()
+  })
+
+  it('the delete button removes the row from this budget only', async () => {
+    const user = userEvent.setup()
+    const b: Budget = {
+      name: 'B',
+      startMonth: '2026-01',
+      income: [],
+      bills: [],
+      discretionary: [makeRow('Food'), makeRow('Rent')],
+    }
+    let current = [b]
+    const onChange = vi.fn<(next: Budget[]) => void>((next) => {
+      current = next
+    })
+
+    const { rerender } = render(
+      <BudgetView budgets={current} availableCategories={[]} onChange={onChange} />,
+    )
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Remove Food from this budget',
+      }),
+    )
+
+    rerender(
+      <BudgetView budgets={current} availableCategories={[]} onChange={onChange} />,
+    )
+
+    expect(current[0].discretionary.map((r) => r.category)).toEqual(['Rent'])
   })
 
   it('jump buttons move a category to the named section, appended', async () => {

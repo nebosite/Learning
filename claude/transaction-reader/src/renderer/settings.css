@@ -5,7 +5,42 @@
 
 .settings h2 {
   font-size: 1rem;
-  margin: 0 0 0.75rem;
+  margin: 0;
+}
+
+.settings-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.settings-delete-unused {
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 10px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  background: white;
+  cursor: pointer;
+}
+
+.settings-delete-unused:hover:not(:disabled) {
+  background: #fee;
+  color: #c00;
+  border-color: #fbb;
+}
+
+.settings-delete-unused:disabled {
+  color: #999;
+  cursor: default;
+}
+
+/* A custom category with no matching effective category in any record. */
+.settings-list li.settings-category-unused {
+  background: #f0f0f0;
+  color: #777;
 }
 
 .settings-add {

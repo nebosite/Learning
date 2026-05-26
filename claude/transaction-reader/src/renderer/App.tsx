@@ -355,6 +355,23 @@ export default function App(): JSX.Element {
     return [...set].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
   }, [history.present, categories])
 
+  // Lowercased effective categories present in records — the Settings tab uses
+  // this to highlight unused custom categories and to bulk-delete them.
+  const usedCategoryKeys = useMemo(() => {
+    const set = new Set<string>()
+    for (const r of history.present) {
+      const c = effectiveValue(r, 'category')
+      if (typeof c === 'string' && c.trim() !== '') set.add(c.trim().toLowerCase())
+    }
+    return set
+  }, [history.present])
+
+  function handleDeleteUnusedCategories(): void {
+    persistCategories(
+      categories.filter((c) => usedCategoryKeys.has(c.trim().toLowerCase())),
+    )
+  }
+
   // Shared by the Transactions and Report tabs (both edit transactions).
   const toolbar = (
     <div className="toolbar">
@@ -475,8 +492,10 @@ export default function App(): JSX.Element {
       <div className={`tab-panel${view !== 'settings' ? ' tab-panel-hidden' : ''}`}>
         <SettingsView
           categories={categories}
+          usedCategoryKeys={usedCategoryKeys}
           onAddCategory={handleAddCategory}
           onDeleteCategory={handleDeleteCategory}
+          onDeleteUnusedCategories={handleDeleteUnusedCategories}
         />
       </div>
       {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}

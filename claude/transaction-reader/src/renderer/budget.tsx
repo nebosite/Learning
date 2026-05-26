@@ -75,6 +75,21 @@ export function moveRow(
   return next
 }
 
+/**
+ * Drop a row from the given section. Only affects this budget — the
+ * underlying category (in the records list / custom categories) is untouched.
+ */
+export function deleteRow(
+  budget: Budget,
+  section: BudgetSection,
+  index: number,
+): Budget {
+  return {
+    ...budget,
+    [section]: budget[section].filter((_, i) => i !== index),
+  }
+}
+
 export function updateCell(
   budget: Budget,
   section: BudgetSection,
@@ -202,6 +217,9 @@ export function BudgetView({
               ),
             )
           }}
+          onDeleteRow={(section, index) => {
+            applyToSelected((b) => deleteRow(b, section, index))
+          }}
         />
       ) : (
         <p className="budget-empty">No budget selected. Click New to create one.</p>
@@ -234,6 +252,7 @@ interface BudgetGridProps {
   onDragEnd: () => void
   onDrop: (target: { section: BudgetSection; index: number }) => void
   onJumpSection: (from: BudgetSection, index: number, to: BudgetSection) => void
+  onDeleteRow: (section: BudgetSection, index: number) => void
 }
 
 function BudgetGrid({
@@ -247,6 +266,7 @@ function BudgetGrid({
   onDragEnd,
   onDrop,
   onJumpSection,
+  onDeleteRow,
 }: BudgetGridProps): JSX.Element {
   const months = useMemo(() => monthsForBudget(budget.startMonth), [budget.startMonth])
   const colSpan = months.length + 2
@@ -320,6 +340,15 @@ function BudgetGrid({
                             {s.label[0]}
                           </button>
                         ))}
+                        <button
+                          type="button"
+                          className="budget-delete-btn"
+                          title={`Remove ${row.category} from this budget`}
+                          aria-label={`Remove ${row.category} from this budget`}
+                          onClick={() => onDeleteRow(sec.id, ri)}
+                        >
+                          ×
+                        </button>
                       </span>
                     </div>
                   </th>
