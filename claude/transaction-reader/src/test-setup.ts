@@ -27,6 +27,7 @@ if (inDom) {
       readMasterFile: vi.fn(async () => ({ version: 1, records: [] })),
       writeMasterFile: vi.fn(async () => undefined),
       confirmDiscard: vi.fn(async () => 'cancel'),
+      confirm: vi.fn(async () => true),
       readReadme: vi.fn(async () => '# Hello'),
       onMenuCommand: vi.fn(() => () => undefined),
       onCloseRequest: vi.fn(() => () => undefined),

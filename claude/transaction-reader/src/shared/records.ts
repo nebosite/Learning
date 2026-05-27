@@ -37,6 +37,32 @@ export function effectiveDate(record: TransactionRecord): IsoDate {
 }
 
 /**
+ * Apply a category rename across a set of records. Any record whose effective
+ * category matches `oldName` (case-insensitive) gets `overrides.category` set
+ * to `newName`. The immutable `original` field is never modified — overrides
+ * carry the rename, so the user can always see what the source export had.
+ *
+ * Returns a new array; records that didn't need to change keep their existing
+ * reference. Match is case-insensitive on the assumption that elsewhere in
+ * the app (`handleAddCategory`, the usedCategoryKeys set) categories are
+ * also treated case-insensitively.
+ */
+export function renameCategoryInRecords(
+  records: readonly TransactionRecord[],
+  oldName: string,
+  newName: string,
+): TransactionRecord[] {
+  const oldLower = oldName.trim().toLowerCase()
+  if (oldLower === '') return [...records]
+  return records.map((r) => {
+    const effective = effectiveValue(r, 'category')
+    if (typeof effective !== 'string') return r
+    if (effective.trim().toLowerCase() !== oldLower) return r
+    return { ...r, overrides: { ...r.overrides, category: newName } }
+  })
+}
+
+/**
  * Return a new array of records sorted by effective date, newest first.
  * Sort is stable, so records with the same effective date keep their input order.
  */

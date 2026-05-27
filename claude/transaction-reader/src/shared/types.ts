@@ -135,6 +135,15 @@ export interface ElectronApi {
   ) => Promise<void>
   /** Show the unsaved-changes prompt (Save / Don't Save / Cancel). */
   confirmDiscard: () => Promise<DiscardChoice>
+  /**
+   * Show a two-button (primary / Cancel) confirmation dialog. Resolves to
+   * `true` if the user clicked the primary button.
+   */
+  confirm: (opts: {
+    message: string
+    detail?: string
+    primaryLabel?: string
+  }) => Promise<boolean>
   /** Read the bundled README.md (markdown source) for in-app help. */
   readReadme: () => Promise<string>
 

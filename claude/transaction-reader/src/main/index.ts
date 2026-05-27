@@ -286,6 +286,29 @@ app.whenReady().then(async () => {
   })
 
   ipcMain.handle(
+    'dialog:confirm',
+    async (
+      event,
+      opts: { message: string; detail?: string; primaryLabel?: string },
+    ): Promise<boolean> => {
+      const win = BrowserWindow.fromWebContents(event.sender)
+      const options: Electron.MessageBoxOptions = {
+        type: 'question',
+        title: 'Confirm',
+        message: opts.message,
+        detail: opts.detail,
+        buttons: [opts.primaryLabel ?? 'OK', 'Cancel'],
+        defaultId: 0,
+        cancelId: 1,
+      }
+      const result = win
+        ? await dialog.showMessageBox(win, options)
+        : await dialog.showMessageBox(options)
+      return result.response === 0
+    },
+  )
+
+  ipcMain.handle(
     'dialog:confirm-discard',
     async (event): Promise<DiscardChoice> => {
       const win = BrowserWindow.fromWebContents(event.sender)

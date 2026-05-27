@@ -29,6 +29,11 @@ const api: ElectronApi = {
   ): Promise<void> => ipcRenderer.invoke('file:write', path, records, budgets),
   confirmDiscard: (): Promise<DiscardChoice> =>
     ipcRenderer.invoke('dialog:confirm-discard'),
+  confirm: (opts: {
+    message: string
+    detail?: string
+    primaryLabel?: string
+  }): Promise<boolean> => ipcRenderer.invoke('dialog:confirm', opts),
   readReadme: (): Promise<string> => ipcRenderer.invoke('file:read-readme'),
 
   onMenuCommand: (callback: (command: MenuCommand) => void): (() => void) => {

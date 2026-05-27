@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import './settings.css'
 
 interface SettingsViewProps {
@@ -8,6 +8,8 @@ interface SettingsViewProps {
   onAddCategory: (name: string) => void
   onDeleteCategory: (name: string) => void
   onDeleteUnusedCategories: () => void
+  /** Cascades to records and budgets. See App's `handleRenameCategory`. */
+  onRenameCategory: (oldName: string, newName: string) => void
 }
 
 export function SettingsView({
@@ -16,9 +18,12 @@ export function SettingsView({
   onAddCategory,
   onDeleteCategory,
   onDeleteUnusedCategories,
+  onRenameCategory,
 }: SettingsViewProps): JSX.Element {
   const [input, setInput] = useState('')
   const [settingsPath, setSettingsPath] = useState<string | null>(null)
+  // The category currently being renamed inline, by its original name.
+  const [editingName, setEditingName] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -99,7 +104,27 @@ export function SettingsView({
               className={isUsed(cat) ? '' : 'settings-category-unused'}
               title={isUsed(cat) ? undefined : 'No matching transactions'}
             >
-              <span>{cat}</span>
+              {editingName === cat ? (
+                <CategoryEditor
+                  initial={cat}
+                  onCommit={(next) => {
+                    setEditingName(null)
+                    const trimmed = next.trim()
+                    if (trimmed !== '' && trimmed !== cat) {
+                      onRenameCategory(cat, trimmed)
+                    }
+                  }}
+                  onCancel={() => setEditingName(null)}
+                />
+              ) : (
+                <span
+                  className="settings-category-name"
+                  onClick={() => setEditingName(cat)}
+                  title="Click to rename"
+                >
+                  {cat}
+                </span>
+              )}
               <button
                 type="button"
                 className="settings-delete"
@@ -114,5 +139,59 @@ export function SettingsView({
         </ul>
       )}
     </div>
+  )
+}
+
+/** Inline name editor: focus on mount, Enter / blur commit, Escape cancels. */
+function CategoryEditor({
+  initial,
+  onCommit,
+  onCancel,
+}: {
+  initial: string
+  onCommit: (next: string) => void
+  onCancel: () => void
+}): JSX.Element {
+  const [value, setValue] = useState(initial)
+  const ref = useRef<HTMLInputElement>(null)
+  // Guards against a trailing blur committing again after Enter/Escape
+  // already resolved the edit.
+  const doneRef = useRef(false)
+
+  useEffect(() => {
+    ref.current?.focus()
+    ref.current?.select()
+  }, [])
+
+  function commit(): void {
+    if (doneRef.current) return
+    doneRef.current = true
+    onCommit(value)
+  }
+
+  function cancel(): void {
+    if (doneRef.current) return
+    doneRef.current = true
+    onCancel()
+  }
+
+  return (
+    <input
+      ref={ref}
+      className="settings-category-input"
+      type="text"
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          commit()
+        } else if (e.key === 'Escape') {
+          e.preventDefault()
+          cancel()
+        }
+      }}
+    />
   )
 }

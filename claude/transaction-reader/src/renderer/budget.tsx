@@ -76,6 +76,56 @@ export function moveRow(
 }
 
 /**
+ * Apply a category rename across the budget. Within each section, a row whose
+ * category matches `oldName` (case-insensitive) is renamed to `newName`. If
+ * the same section already contains a row with `newName`, the target row
+ * absorbs the original row's 12 monthly amounts and the original row is
+ * removed. The target row keeps its position.
+ */
+export function renameCategoryInBudget(
+  budget: Budget,
+  oldName: string,
+  newName: string,
+): Budget {
+  const oldLower = oldName.trim().toLowerCase()
+  const newLower = newName.trim().toLowerCase()
+  if (oldLower === '') return budget
+
+  function renameSection(rows: BudgetRow[]): BudgetRow[] {
+    const oldIdx = rows.findIndex(
+      (r) => r.category.trim().toLowerCase() === oldLower,
+    )
+    if (oldIdx === -1) return rows
+    // A distinct row already holds the target name → merge into it.
+    const targetIdx = rows.findIndex(
+      (r, i) =>
+        i !== oldIdx && r.category.trim().toLowerCase() === newLower,
+    )
+    if (targetIdx === -1) {
+      // Plain rename in place.
+      return rows.map((r, i) => (i === oldIdx ? { ...r, category: newName } : r))
+    }
+    const oldRow = rows[oldIdx]
+    const targetRow = rows[targetIdx]
+    const mergedAmounts = targetRow.amounts.map(
+      (a, i) => a + (oldRow.amounts[i] ?? 0),
+    )
+    return rows
+      .map((r, i) =>
+        i === targetIdx ? { ...r, amounts: mergedAmounts } : r,
+      )
+      .filter((_, i) => i !== oldIdx)
+  }
+
+  return {
+    ...budget,
+    income: renameSection(budget.income),
+    bills: renameSection(budget.bills),
+    discretionary: renameSection(budget.discretionary),
+  }
+}
+
+/**
  * Drop a row from the given section. Only affects this budget — the
  * underlying category (in the records list / custom categories) is untouched.
  */

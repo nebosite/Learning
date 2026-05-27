@@ -8,6 +8,7 @@ import {
   deleteRow,
   monthsForBudget,
   moveRow,
+  renameCategoryInBudget,
   rowTotal,
   sectionGrandTotal,
   sectionMonthlyTotals,
@@ -140,6 +141,50 @@ describe('deleteRow', () => {
     const before = JSON.parse(JSON.stringify(b))
     deleteRow(b, 'discretionary', 0)
     expect(b).toEqual(before)
+  })
+})
+
+describe('renameCategoryInBudget', () => {
+  it('renames a row in place when no other row has the target name', () => {
+    const b = makeBudget({ discretionary: [makeRow('Food'), makeRow('Books')] })
+    const next = renameCategoryInBudget(b, 'Food', 'Eating Out')
+    expect(next.discretionary.map((r) => r.category)).toEqual(['Eating Out', 'Books'])
+  })
+
+  it('merges into the existing target row when the section already has it', () => {
+    const b = makeBudget({
+      bills: [
+        makeRow('Rent', [100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+        makeRow('Housing', [50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+      ],
+    })
+    const next = renameCategoryInBudget(b, 'Rent', 'Housing')
+    // Target row "Housing" keeps its position and absorbs Rent's amounts;
+    // the "Rent" row is gone.
+    expect(next.bills.map((r) => r.category)).toEqual(['Housing'])
+    expect(next.bills[0].amounts[0]).toBe(150)
+  })
+
+  it('matches case-insensitively but writes the new casing', () => {
+    const b = makeBudget({ discretionary: [makeRow('food')] })
+    const next = renameCategoryInBudget(b, 'Food', 'Eating')
+    expect(next.discretionary.map((r) => r.category)).toEqual(['Eating'])
+  })
+
+  it('only touches the section where the source row lives', () => {
+    const b = makeBudget({
+      income: [makeRow('Salary')],
+      discretionary: [makeRow('Food')],
+    })
+    const next = renameCategoryInBudget(b, 'Food', 'Eating')
+    expect(next.income.map((r) => r.category)).toEqual(['Salary'])
+    expect(next.discretionary.map((r) => r.category)).toEqual(['Eating'])
+  })
+
+  it('returns the same budget when nothing matches', () => {
+    const b = makeBudget({ discretionary: [makeRow('Books')] })
+    const next = renameCategoryInBudget(b, 'Food', 'Eating')
+    expect(next.discretionary).toEqual([{ category: 'Books', amounts: new Array(12).fill(0) }])
   })
 })
 

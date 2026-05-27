@@ -6,8 +6,8 @@ import type {
   TransactionOverrides,
   TransactionRecord,
 } from '../shared/types'
-import { effectiveValue } from '../shared/records'
-import { BudgetView } from './budget'
+import { effectiveValue, renameCategoryInRecords } from '../shared/records'
+import { BudgetView, renameCategoryInBudget } from './budget'
 import { Grid } from './grid'
 import { HelpModal } from './help-modal'
 import { Report } from './report'
@@ -372,6 +372,98 @@ export default function App(): JSX.Element {
     )
   }
 
+  /**
+   * Rename a custom category and cascade the change to:
+   *   - every matching record (via an override; the immutable original stays put);
+   *   - every matching row in every budget (merging duplicates if the target
+   *     name already exists in the same section);
+   *   - the custom-categories list itself (rename in place, or drop the old
+   *     name entirely if the target name already exists in the list).
+   *
+   * When the cascade would touch records, budget rows, or merge into an
+   * existing category, the user is asked to confirm and shown the counts
+   * first. Matching is case-insensitive so this also normalizes casing
+   * variants (e.g., "Food" -> "food" rewrites everything to the new casing).
+   */
+  async function handleRenameCategory(oldName: string, newName: string): Promise<void> {
+    const trimmedNew = newName.trim()
+    if (trimmedNew === '') return
+    if (trimmedNew === oldName) return
+
+    const oldLower = oldName.trim().toLowerCase()
+    const newLower = trimmedNew.toLowerCase()
+
+    // How many records / budget rows the cascade will touch.
+    let affectedRecords = 0
+    for (const r of history.present) {
+      const c = effectiveValue(r, 'category')
+      if (typeof c === 'string' && c.trim().toLowerCase() === oldLower) {
+        affectedRecords++
+      }
+    }
+    let affectedRows = 0
+    for (const b of budgets) {
+      for (const sec of ['income', 'bills', 'discretionary'] as const) {
+        for (const row of b[sec]) {
+          if (row.category.trim().toLowerCase() === oldLower) affectedRows++
+        }
+      }
+    }
+    const collides =
+      newLower !== oldLower &&
+      categories.some((c) => c.trim().toLowerCase() === newLower)
+
+    // Only prompt when the rename actually does something beyond renaming a
+    // never-used category in the customs list.
+    if (affectedRecords > 0 || affectedRows > 0 || collides) {
+      const lines: string[] = [
+        `${affectedRecords} ${affectedRecords === 1 ? 'transaction' : 'transactions'} and ${affectedRows} budget ${affectedRows === 1 ? 'row' : 'rows'} will be updated.`,
+      ]
+      if (collides) {
+        lines.push(
+          `A category named "${trimmedNew}" already exists. The renamed category will merge into it and "${oldName}" will be removed from your custom list.`,
+        )
+      }
+      const message = `Rename "${oldName}" to "${trimmedNew}"?`
+      const detail = lines.join('\n\n')
+      // Fall back to the browser confirm if the preload bundle is older than
+      // the renderer (a stale dev build can leave window.api.confirm
+      // undefined). Either way, a falsy result aborts the rename.
+      const ok =
+        typeof window.api.confirm === 'function'
+          ? await window.api.confirm({ message, detail, primaryLabel: 'Rename' })
+          : window.confirm(`${message}\n\n${detail}`)
+      if (!ok) return
+    }
+
+    // 1. Records — only walk history if anything matches. Skipping keeps the
+    //    doc clean (no spurious dirty flag for a no-op rename).
+    if (affectedRecords > 0) {
+      apply((prev) => renameCategoryInRecords(prev, oldName, trimmedNew))
+    }
+
+    // 2. Budgets — same: skip when no rows match.
+    if (affectedRows > 0) {
+      setBudgets((prev) =>
+        prev.map((b) => renameCategoryInBudget(b, oldName, trimmedNew)),
+      )
+    }
+
+    // 3. Custom-categories list always updates (this is what triggered the
+    //    rename in the first place).
+    if (collides) {
+      persistCategories(
+        categories.filter((c) => c.trim().toLowerCase() !== oldLower),
+      )
+    } else {
+      persistCategories(
+        categories.map((c) =>
+          c.trim().toLowerCase() === oldLower ? trimmedNew : c,
+        ),
+      )
+    }
+  }
+
   // Shared by the Transactions and Report tabs (both edit transactions).
   const toolbar = (
     <div className="toolbar">
@@ -496,6 +588,7 @@ export default function App(): JSX.Element {
           onAddCategory={handleAddCategory}
           onDeleteCategory={handleDeleteCategory}
           onDeleteUnusedCategories={handleDeleteUnusedCategories}
+          onRenameCategory={handleRenameCategory}
         />
       </div>
       {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
