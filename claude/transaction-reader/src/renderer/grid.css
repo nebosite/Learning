@@ -2,13 +2,13 @@
   --grid-template:
     90px                /* Ignored */
     100px               /* Date */
-    minmax(140px, 1fr)  /* Account */
-    minmax(120px, 1fr)  /* Merchant */
-    minmax(120px, 1fr)  /* Category */
+    140px               /* Account */
+    120px               /* Merchant */
+    120px               /* Category */
     100px               /* Amount */
-    minmax(260px, 3fr)  /* Statement */
-    minmax(100px, 1fr)  /* Notes */
-    minmax(50px, 1fr)   /* Tags */
+    minmax(260px, 1fr)  /* Statement (only flexible column) */
+    100px               /* Notes */
+    50px                /* Tags */
     100px               /* Owner */
     36px;               /* Delete */
   --grid-min-width: 1166px;

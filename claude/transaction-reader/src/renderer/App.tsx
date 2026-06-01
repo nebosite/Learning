@@ -579,6 +579,7 @@ export default function App(): JSX.Element {
           budgets={budgets}
           availableCategories={availableCategories}
           onChange={setBudgets}
+          onAddCategory={handleAddCategory}
         />
       </div>
       <div className={`tab-panel${view !== 'settings' ? ' tab-panel-hidden' : ''}`}>

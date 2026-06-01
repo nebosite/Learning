@@ -195,6 +195,77 @@
   padding: 4px 8px;
 }
 
+.budget-section-header-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.budget-section-add {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 8px;
+  color: #1e3a8a;
+  background: white;
+  border: 1px solid #93c5fd;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.budget-section-add:hover {
+  background: #eff6ff;
+}
+
+/* Inline autocomplete shown after clicking "+ Add" in a section header. */
+.budget-section-adder {
+  position: relative;
+  display: inline-block;
+}
+
+.budget-section-adder-input {
+  font: inherit;
+  font-size: 12px;
+  padding: 2px 6px;
+  width: 180px;
+  border: 1px solid #93c5fd;
+  border-radius: 3px;
+  background: white;
+  color: #111;
+}
+
+.budget-section-suggest {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 5;
+  min-width: 100%;
+  max-height: 220px;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid #93c5fd;
+  border-top: none;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+}
+
+.budget-section-suggest-item {
+  padding: 3px 8px;
+  font-size: 12px;
+  color: #111;
+  font-weight: 400;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.budget-section-suggest-item:hover {
+  background: #eff6ff;
+}
+
+.budget-section-suggest-item-active {
+  background: #dbeafe;
+}
+
 /* Section totals row. */
 .budget-section-totals th,
 .budget-section-totals td {

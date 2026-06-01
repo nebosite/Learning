@@ -161,16 +161,24 @@ interface BudgetProps {
   /** Distinct category names available when seeding a new budget. */
   availableCategories: string[]
   onChange: (budgets: Budget[]) => void
+  /**
+   * Called when the user types a brand-new category into a section adder.
+   * App's handleAddCategory dedupes case-insensitively, so passing an
+   * already-known name is a no-op.
+   */
+  onAddCategory: (name: string) => void
 }
 
 export function BudgetView({
   budgets,
   availableCategories,
   onChange,
+  onAddCategory,
 }: BudgetProps): JSX.Element {
   const [selectedName, setSelectedName] = useState<string | null>(null)
   const [newOpen, setNewOpen] = useState(false)
   const [drag, setDrag] = useState<DragSource | null>(null)
+  const [addingSection, setAddingSection] = useState<BudgetSection | null>(null)
   const [editing, setEditing] = useState<{
     section: BudgetSection
     row: number
@@ -190,6 +198,32 @@ export function BudgetView({
   function applyToSelected(updater: (b: Budget) => Budget): void {
     if (!selected) return
     onChange(budgets.map((b) => (b.name === selected.name ? updater(b) : b)))
+  }
+
+  /**
+   * Add a category row to the selected budget's section. If the category is
+   * already present in any section of this budget (case-insensitive), do
+   * nothing — duplicate rows aren't useful and would split the row's
+   * 12-month totals. The customs list is always updated so the user can
+   * still pick the new name later from another budget.
+   */
+  function handleAddToSection(section: BudgetSection, rawName: string): void {
+    const name = rawName.trim()
+    if (name === '') return
+    onAddCategory(name)
+    if (!selected) return
+    const lower = name.toLowerCase()
+    const already =
+      selected.income.some((r) => r.category.trim().toLowerCase() === lower) ||
+      selected.bills.some((r) => r.category.trim().toLowerCase() === lower) ||
+      selected.discretionary.some(
+        (r) => r.category.trim().toLowerCase() === lower,
+      )
+    if (already) return
+    applyToSelected((b) => ({
+      ...b,
+      [section]: [...b[section], { category: name, amounts: new Array<number>(12).fill(0) }],
+    }))
   }
 
   function handleCreate(name: string, startMonth: string): void {
@@ -246,6 +280,14 @@ export function BudgetView({
           budget={selected}
           drag={drag}
           editing={editing}
+          addingSection={addingSection}
+          availableCategories={availableCategories}
+          onStartAdd={(section) => setAddingSection(section)}
+          onCancelAdd={() => setAddingSection(null)}
+          onCommitAdd={(section, name) => {
+            handleAddToSection(section, name)
+            setAddingSection(null)
+          }}
           onStartEdit={(section, row, month) => setEditing({ section, row, month })}
           onCancelEdit={() => setEditing(null)}
           onCommitEdit={(section, row, month, value) => {
@@ -290,6 +332,11 @@ interface BudgetGridProps {
   budget: Budget
   drag: DragSource | null
   editing: { section: BudgetSection; row: number; month: number } | null
+  addingSection: BudgetSection | null
+  availableCategories: string[]
+  onStartAdd: (section: BudgetSection) => void
+  onCancelAdd: () => void
+  onCommitAdd: (section: BudgetSection, name: string) => void
   onStartEdit: (section: BudgetSection, row: number, month: number) => void
   onCancelEdit: () => void
   onCommitEdit: (
@@ -309,6 +356,11 @@ function BudgetGrid({
   budget,
   drag,
   editing,
+  addingSection,
+  availableCategories,
+  onStartAdd,
+  onCancelAdd,
+  onCommitAdd,
   onStartEdit,
   onCancelEdit,
   onCommitEdit,
@@ -346,7 +398,27 @@ function BudgetGrid({
           return (
             <tbody key={sec.id}>
               <tr className="budget-section-header">
-                <th colSpan={colSpan}>{sec.label}</th>
+                <th colSpan={colSpan}>
+                  <div className="budget-section-header-row">
+                    <span>{sec.label}</span>
+                    {addingSection === sec.id ? (
+                      <SectionAdder
+                        categories={availableCategories}
+                        onCommit={(name) => onCommitAdd(sec.id, name)}
+                        onCancel={onCancelAdd}
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        className="budget-section-add"
+                        onClick={() => onStartAdd(sec.id)}
+                        aria-label={`Add category to ${sec.label}`}
+                      >
+                        + Add
+                      </button>
+                    )}
+                  </div>
+                </th>
               </tr>
               {rows.length === 0 && (
                 <tr
@@ -575,5 +647,100 @@ function NewBudgetModal({
         </div>
       </div>
     </div>
+  )
+}
+
+interface SectionAdderProps {
+  categories: string[]
+  onCommit: (name: string) => void
+  onCancel: () => void
+}
+
+/**
+ * Inline autocomplete used on each section header. Mirrors the grid's
+ * CategoryEditor: substring-match dropdown, exact case-insensitive match wins
+ * the commit, otherwise the top prediction, otherwise the trimmed input
+ * (which the parent treats as a brand-new category). doneRef guards against
+ * the trailing blur firing after Enter/Escape/click already resolved.
+ */
+function SectionAdder({ categories, onCommit, onCancel }: SectionAdderProps): JSX.Element {
+  const [input, setInput] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  const doneRef = useRef(false)
+
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
+
+  const matches = useMemo(() => {
+    const sorted = [...categories].sort((a, b) =>
+      a.toLowerCase().localeCompare(b.toLowerCase()),
+    )
+    const q = input.trim().toLowerCase()
+    return q === '' ? sorted : sorted.filter((c) => c.toLowerCase().includes(q))
+  }, [categories, input])
+
+  function resolvedValue(): string {
+    const trimmed = input.trim()
+    const exact = categories.find((c) => c.toLowerCase() === trimmed.toLowerCase())
+    if (exact) return exact
+    return matches.length > 0 ? matches[0] : trimmed
+  }
+
+  const predicted = resolvedValue()
+
+  function commit(): void {
+    if (doneRef.current) return
+    doneRef.current = true
+    const v = resolvedValue()
+    if (v === '') onCancel()
+    else onCommit(v)
+  }
+
+  function cancel(): void {
+    if (doneRef.current) return
+    doneRef.current = true
+    onCancel()
+  }
+
+  return (
+    <span className="budget-section-adder">
+      <input
+        ref={inputRef}
+        type="text"
+        className="budget-section-adder-input"
+        value={input}
+        placeholder="Category…"
+        onChange={(e) => setInput(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            commit()
+          } else if (e.key === 'Escape') {
+            e.preventDefault()
+            cancel()
+          }
+        }}
+      />
+      {matches.length > 0 && (
+        <div className="budget-section-suggest">
+          {matches.map((c) => (
+            <div
+              key={c}
+              className={`budget-section-suggest-item${c === predicted ? ' budget-section-suggest-item-active' : ''}`}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                if (doneRef.current) return
+                doneRef.current = true
+                onCommit(c)
+              }}
+            >
+              {c}
+            </div>
+          ))}
+        </div>
+      )}
+    </span>
   )
 }

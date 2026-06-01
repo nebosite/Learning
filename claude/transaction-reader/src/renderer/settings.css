@@ -47,7 +47,7 @@
 .settings-category-name {
   flex: 1;
   cursor: pointer;
-  padding: 2px 0;
+  padding: 0;
 }
 
 .settings-category-name:hover {
@@ -58,8 +58,8 @@
   flex: 1;
   font: inherit;
   font-size: 13px;
-  padding: 1px 6px;
-  border: 2px solid #3b82f6;
+  padding: 0 6px;
+  border: 1px solid #3b82f6;
   border-radius: 3px;
   background: white;
   color: inherit;
@@ -88,9 +88,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 10px;
+  padding: 1px 10px;
   border-bottom: 1px solid #eee;
   font-size: 13px;
+  line-height: 1.2;
 }
 
 .settings-list li:last-child {
@@ -101,10 +102,10 @@
   background: none;
   border: none;
   color: #999;
-  font-size: 16px;
+  font-size: 13px;
   line-height: 1;
   cursor: pointer;
-  padding: 2px 6px;
+  padding: 0 6px;
   border-radius: 3px;
 }
 

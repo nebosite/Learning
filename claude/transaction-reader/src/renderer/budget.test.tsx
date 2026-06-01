@@ -216,6 +216,7 @@ describe('BudgetView', () => {
         budgets={[]}
         availableCategories={['Food', 'Rent', 'Travel']}
         onChange={onChange}
+        onAddCategory={vi.fn()}
       />,
     )
 
@@ -248,6 +249,7 @@ describe('BudgetView', () => {
         budgets={[existing]}
         availableCategories={[]}
         onChange={vi.fn()}
+        onAddCategory={vi.fn()}
       />,
     )
 
@@ -273,7 +275,12 @@ describe('BudgetView', () => {
     })
 
     const { rerender } = render(
-      <BudgetView budgets={current} availableCategories={[]} onChange={onChange} />,
+      <BudgetView
+        budgets={current}
+        availableCategories={[]}
+        onChange={onChange}
+        onAddCategory={vi.fn()}
+      />,
     )
 
     await user.click(
@@ -283,10 +290,100 @@ describe('BudgetView', () => {
     )
 
     rerender(
-      <BudgetView budgets={current} availableCategories={[]} onChange={onChange} />,
+      <BudgetView
+        budgets={current}
+        availableCategories={[]}
+        onChange={onChange}
+        onAddCategory={vi.fn()}
+      />,
     )
 
     expect(current[0].discretionary.map((r) => r.category)).toEqual(['Rent'])
+  })
+
+  it('section "+ Add" button appends a new category row and notifies onAddCategory', async () => {
+    const user = userEvent.setup()
+    const b: Budget = {
+      name: 'B',
+      startMonth: '2026-01',
+      income: [],
+      bills: [],
+      discretionary: [makeRow('Food')],
+    }
+    let current = [b]
+    const onChange = vi.fn<(next: Budget[]) => void>((next) => {
+      current = next
+    })
+    const onAddCategory = vi.fn<(name: string) => void>()
+
+    const { rerender } = render(
+      <BudgetView
+        budgets={current}
+        availableCategories={['Food']}
+        onChange={onChange}
+        onAddCategory={onAddCategory}
+      />,
+    )
+
+    // Open the adder for Bills.
+    await user.click(
+      screen.getByRole('button', { name: 'Add category to Bills' }),
+    )
+    // The input is rendered with a placeholder rather than a label, so query
+    // by placeholder.
+    await user.type(screen.getByPlaceholderText('Category…'), 'Rent')
+    await user.keyboard('{Enter}')
+
+    rerender(
+      <BudgetView
+        budgets={current}
+        availableCategories={['Food']}
+        onChange={onChange}
+        onAddCategory={onAddCategory}
+      />,
+    )
+
+    expect(onAddCategory).toHaveBeenCalledWith('Rent')
+    expect(current[0].bills.map((r) => r.category)).toEqual(['Rent'])
+    expect(current[0].bills[0].amounts).toEqual(new Array(12).fill(0))
+    // Discretionary untouched.
+    expect(current[0].discretionary.map((r) => r.category)).toEqual(['Food'])
+  })
+
+  it('section adder skips appending a row when the category already exists in the budget (case-insensitive)', async () => {
+    const user = userEvent.setup()
+    const b: Budget = {
+      name: 'B',
+      startMonth: '2026-01',
+      income: [],
+      bills: [makeRow('Rent')],
+      discretionary: [],
+    }
+    let current = [b]
+    const onChange = vi.fn<(next: Budget[]) => void>((next) => {
+      current = next
+    })
+    const onAddCategory = vi.fn<(name: string) => void>()
+
+    render(
+      <BudgetView
+        budgets={current}
+        availableCategories={['Rent']}
+        onChange={onChange}
+        onAddCategory={onAddCategory}
+      />,
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: 'Add category to Discretionary' }),
+    )
+    await user.type(screen.getByPlaceholderText('Category…'), 'rent')
+    await user.keyboard('{Enter}')
+
+    // onAddCategory is still called (App dedupes against the customs list).
+    expect(onAddCategory).toHaveBeenCalledWith('Rent')
+    // But the budget itself is unchanged — no duplicate row.
+    expect(onChange).not.toHaveBeenCalled()
   })
 
   it('jump buttons move a category to the named section, appended', async () => {
@@ -304,7 +401,12 @@ describe('BudgetView', () => {
     })
 
     const { rerender } = render(
-      <BudgetView budgets={current} availableCategories={[]} onChange={onChange} />,
+      <BudgetView
+        budgets={current}
+        availableCategories={[]}
+        onChange={onChange}
+        onAddCategory={vi.fn()}
+      />,
     )
 
     // Find the Food row's "B"(ills) jump button via its aria-label.
@@ -315,7 +417,12 @@ describe('BudgetView', () => {
 
     // After onChange, render with the new state.
     rerender(
-      <BudgetView budgets={current} availableCategories={[]} onChange={onChange} />,
+      <BudgetView
+        budgets={current}
+        availableCategories={[]}
+        onChange={onChange}
+        onAddCategory={vi.fn()}
+      />,
     )
 
     const updated = current[0]
