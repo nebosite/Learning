@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Budget, BudgetRow, BudgetSection } from '../shared/types'
-import { formatAmount } from './grid'
+import type {
+  Budget,
+  BudgetRow,
+  BudgetSection,
+  OriginalTransaction,
+  TransactionRecord,
+} from '../shared/types'
+import { effectiveDate, effectiveValue } from '../shared/records'
+import { Grid, formatAmount } from './grid'
 import './budget.css'
 
 const SECTIONS: { id: BudgetSection; label: string }[] = [
@@ -140,6 +147,37 @@ export function deleteRow(
   }
 }
 
+/**
+ * Original-array indices of the non-ignored transactions whose effective
+ * category matches the given budget cell's row category (case-insensitive,
+ * trimmed) and whose effective YYYY-MM matches the budget cell's month.
+ * Returns [] when the row is out of bounds, the category is blank, or no
+ * records match — the selected-cell sub-grid simply renders empty.
+ */
+export function recordsForBudgetCell(
+  records: readonly TransactionRecord[],
+  budget: Budget,
+  section: BudgetSection,
+  rowIndex: number,
+  monthIndex: number,
+): number[] {
+  const row = budget[section][rowIndex]
+  if (!row) return []
+  const cat = row.category.trim().toLowerCase()
+  if (cat === '') return []
+  const month = addMonths(budget.startMonth, monthIndex)
+  const out: number[] = []
+  records.forEach((r, i) => {
+    if (r.ignored) return
+    const v = effectiveValue(r, 'category')
+    const rc = typeof v === 'string' ? v.trim().toLowerCase() : ''
+    if (rc !== cat) return
+    if (effectiveDate(r).slice(0, 7) !== month) return
+    out.push(i)
+  })
+  return out
+}
+
 export function updateCell(
   budget: Budget,
   section: BudgetSection,
@@ -167,6 +205,28 @@ interface BudgetProps {
    * already-known name is a no-op.
    */
   onAddCategory: (name: string) => void
+  /**
+   * The transactions backing the selected-cell sub-grid. Same shape passed to
+   * the Spending Analysis tab's embedded Grid.
+   */
+  records: TransactionRecord[]
+  categories: string[]
+  /** Whether the Budget tab is the visible one (forwarded to the sub-Grid). */
+  active: boolean
+  resortKey: number
+  onSetField: (
+    index: number,
+    field: keyof OriginalTransaction,
+    value: OriginalTransaction[keyof OriginalTransaction],
+  ) => void
+  onRemoveOverride: (index: number, field: keyof OriginalTransaction) => void
+  onToggleIgnored: (index: number) => void
+  onDelete: (index: number) => void
+  onFill: (
+    sourceIndex: number,
+    targetIndices: number[],
+    field: keyof OriginalTransaction | 'ignored',
+  ) => void
 }
 
 export function BudgetView({
@@ -174,12 +234,28 @@ export function BudgetView({
   availableCategories,
   onChange,
   onAddCategory,
+  records,
+  categories,
+  active,
+  resortKey,
+  onSetField,
+  onRemoveOverride,
+  onToggleIgnored,
+  onDelete,
+  onFill,
 }: BudgetProps): JSX.Element {
   const [selectedName, setSelectedName] = useState<string | null>(null)
   const [newOpen, setNewOpen] = useState(false)
   const [drag, setDrag] = useState<DragSource | null>(null)
   const [addingSection, setAddingSection] = useState<BudgetSection | null>(null)
   const [editing, setEditing] = useState<{
+    section: BudgetSection
+    row: number
+    month: number
+  } | null>(null)
+  // Currently-selected month cell — drives the sub-grid below. Editing a cell
+  // also selects it, but Escape closes the editor while selection persists.
+  const [selectedCell, setSelectedCell] = useState<{
     section: BudgetSection
     row: number
     month: number
@@ -199,6 +275,22 @@ export function BudgetView({
     if (!selected) return
     onChange(budgets.map((b) => (b.name === selected.name ? updater(b) : b)))
   }
+
+  const matchingIndices = useMemo(() => {
+    if (!selected || !selectedCell) return []
+    return recordsForBudgetCell(
+      records,
+      selected,
+      selectedCell.section,
+      selectedCell.row,
+      selectedCell.month,
+    )
+  }, [records, selected, selectedCell])
+
+  const subRecords = useMemo(
+    () => matchingIndices.map((i) => records[i]),
+    [matchingIndices, records],
+  )
 
   /**
    * Add a category row to the selected budget's section. If the category is
@@ -280,6 +372,7 @@ export function BudgetView({
           budget={selected}
           drag={drag}
           editing={editing}
+          selectedCell={selectedCell}
           addingSection={addingSection}
           availableCategories={availableCategories}
           onStartAdd={(section) => setAddingSection(section)}
@@ -288,7 +381,13 @@ export function BudgetView({
             handleAddToSection(section, name)
             setAddingSection(null)
           }}
-          onStartEdit={(section, row, month) => setEditing({ section, row, month })}
+          onSelectCell={(section, row, month) =>
+            setSelectedCell({ section, row, month })
+          }
+          onStartEdit={(section, row, month) => {
+            setSelectedCell({ section, row, month })
+            setEditing({ section, row, month })
+          }}
           onCancelEdit={() => setEditing(null)}
           onCommitEdit={(section, row, month, value) => {
             applyToSelected((b) => updateCell(b, section, row, month, value))
@@ -311,11 +410,52 @@ export function BudgetView({
           }}
           onDeleteRow={(section, index) => {
             applyToSelected((b) => deleteRow(b, section, index))
+            // The deleted row's index now points at a different row (or out of
+            // range). Clear selection so we don't show stale transactions.
+            if (
+              selectedCell &&
+              selectedCell.section === section &&
+              selectedCell.row >= index
+            ) {
+              setSelectedCell(null)
+            }
           }}
         />
       ) : (
         <p className="budget-empty">No budget selected. Click New to create one.</p>
       )}
+
+      <div className="budget-edit">
+        {selected && selectedCell ? (
+          <Grid
+            key={`${selected.name}-${selectedCell.section}-${selectedCell.row}-${selectedCell.month}`}
+            records={subRecords}
+            categories={categories}
+            active={active}
+            resortKey={resortKey}
+            showFilter={false}
+            onSetField={(li, field, value) =>
+              onSetField(matchingIndices[li], field, value)
+            }
+            onRemoveOverride={(li, field) =>
+              onRemoveOverride(matchingIndices[li], field)
+            }
+            onToggleIgnored={(li) => onToggleIgnored(matchingIndices[li])}
+            onDelete={(li) => onDelete(matchingIndices[li])}
+            onFill={(s, targets, field) =>
+              onFill(
+                matchingIndices[s],
+                targets.map((t) => matchingIndices[t]),
+                field,
+              )
+            }
+          />
+        ) : (
+          <p className="budget-hint">
+            Click a budget cell to show the transactions behind it.
+          </p>
+        )}
+      </div>
 
       {newOpen && (
         <NewBudgetModal
@@ -332,11 +472,13 @@ interface BudgetGridProps {
   budget: Budget
   drag: DragSource | null
   editing: { section: BudgetSection; row: number; month: number } | null
+  selectedCell: { section: BudgetSection; row: number; month: number } | null
   addingSection: BudgetSection | null
   availableCategories: string[]
   onStartAdd: (section: BudgetSection) => void
   onCancelAdd: () => void
   onCommitAdd: (section: BudgetSection, name: string) => void
+  onSelectCell: (section: BudgetSection, row: number, month: number) => void
   onStartEdit: (section: BudgetSection, row: number, month: number) => void
   onCancelEdit: () => void
   onCommitEdit: (
@@ -356,11 +498,13 @@ function BudgetGrid({
   budget,
   drag,
   editing,
+  selectedCell,
   addingSection,
   availableCategories,
   onStartAdd,
   onCancelAdd,
   onCommitAdd,
+  onSelectCell,
   onStartEdit,
   onCancelEdit,
   onCommitEdit,
@@ -483,6 +627,12 @@ function BudgetGrid({
                         editing.row === ri &&
                         editing.month === mi
                       }
+                      selected={
+                        selectedCell?.section === sec.id &&
+                        selectedCell.row === ri &&
+                        selectedCell.month === mi
+                      }
+                      onSelect={() => onSelectCell(sec.id, ri, mi)}
                       onStart={() => onStartEdit(sec.id, ri, mi)}
                       onCancel={onCancelEdit}
                       onCommit={(v) => onCommitEdit(sec.id, ri, mi, v)}
@@ -520,12 +670,22 @@ function BudgetGrid({
 interface BudgetCellProps {
   value: number
   editing: boolean
+  selected: boolean
+  onSelect: () => void
   onStart: () => void
   onCancel: () => void
   onCommit: (value: number) => void
 }
 
-function BudgetCell({ value, editing, onStart, onCancel, onCommit }: BudgetCellProps): JSX.Element {
+function BudgetCell({
+  value,
+  editing,
+  selected,
+  onSelect,
+  onStart,
+  onCancel,
+  onCommit,
+}: BudgetCellProps): JSX.Element {
   const [input, setInput] = useState(() => String(value))
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -540,7 +700,13 @@ function BudgetCell({ value, editing, onStart, onCancel, onCommit }: BudgetCellP
 
   if (!editing) {
     return (
-      <td className="budget-cell" onClick={onStart}>
+      <td
+        className={`budget-cell${selected ? ' budget-cell-selected' : ''}`}
+        onClick={() => {
+          onSelect()
+          onStart()
+        }}
+      >
         {formatAmount(value)}
       </td>
     )

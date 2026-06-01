@@ -1,13 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { Budget, BudgetRow, BudgetSection } from '../shared/types'
+import type { Budget, BudgetRow, TransactionRecord } from '../shared/types'
+import { canonicalRecordKey } from '../shared/records'
 import {
   BudgetView,
   addMonths,
   deleteRow,
   monthsForBudget,
   moveRow,
+  recordsForBudgetCell,
   renameCategoryInBudget,
   rowTotal,
   sectionGrandTotal,
@@ -28,6 +30,50 @@ function makeBudget(partial: Partial<Budget> = {}): Budget {
     discretionary: [],
     ...partial,
   }
+}
+
+/**
+ * Build a `TransactionRecord` whose original.* gets the fields you pass and
+ * sensible defaults for the rest. Tests can pass `ignored: true` to flag a
+ * record as out-of-scope without needing an override.
+ */
+function makeRecord(partial: {
+  date?: string
+  category?: string
+  amount?: number
+  merchant?: string
+  ignored?: boolean
+}): TransactionRecord {
+  const original = {
+    date: partial.date ?? '2026-01-15',
+    account: 'Checking',
+    merchant: partial.merchant ?? 'Acme',
+    category: partial.category ?? 'Food',
+    amount: partial.amount ?? -10,
+    originalStatement: '',
+    notes: '',
+    tags: '',
+    owner: '',
+  }
+  return {
+    key: canonicalRecordKey(original),
+    original,
+    overrides: {},
+    ignored: partial.ignored ?? false,
+  }
+}
+
+/** Default no-op props the embedded sub-grid needs but most tests don't care about. */
+const subGridDefaults = {
+  records: [] as TransactionRecord[],
+  categories: [] as string[],
+  active: true,
+  resortKey: 0,
+  onSetField: vi.fn(),
+  onRemoveOverride: vi.fn(),
+  onToggleIgnored: vi.fn(),
+  onDelete: vi.fn(),
+  onFill: vi.fn(),
 }
 
 describe('addMonths', () => {
@@ -207,6 +253,38 @@ describe('updateCell', () => {
   })
 })
 
+describe('recordsForBudgetCell', () => {
+  it('returns indices whose effective category and month match (case-insensitive)', () => {
+    const records = [
+      makeRecord({ date: '2026-02-10', category: 'Food', amount: -5 }),
+      makeRecord({ date: '2026-02-20', category: 'food', amount: -7 }),
+      makeRecord({ date: '2026-03-01', category: 'Food', amount: -9 }),
+      makeRecord({ date: '2026-02-15', category: 'Rent', amount: -1000 }),
+    ]
+    const b = makeBudget({
+      startMonth: '2026-01',
+      discretionary: [makeRow('Food')],
+    })
+    // 2026-02 is monthIndex 1.
+    expect(recordsForBudgetCell(records, b, 'discretionary', 0, 1)).toEqual([0, 1])
+  })
+
+  it('skips ignored records', () => {
+    const records = [
+      makeRecord({ date: '2026-01-05', category: 'Food', ignored: true }),
+      makeRecord({ date: '2026-01-12', category: 'Food' }),
+    ]
+    const b = makeBudget({ discretionary: [makeRow('Food')] })
+    expect(recordsForBudgetCell(records, b, 'discretionary', 0, 0)).toEqual([1])
+  })
+
+  it('returns [] for an out-of-bounds row or a blank category', () => {
+    const b = makeBudget({ discretionary: [makeRow('  ')] })
+    expect(recordsForBudgetCell([], b, 'discretionary', 0, 0)).toEqual([])
+    expect(recordsForBudgetCell([], b, 'discretionary', 5, 0)).toEqual([])
+  })
+})
+
 describe('BudgetView', () => {
   it('seeds a new budget with every available category in Discretionary', async () => {
     const user = userEvent.setup()
@@ -217,6 +295,7 @@ describe('BudgetView', () => {
         availableCategories={['Food', 'Rent', 'Travel']}
         onChange={onChange}
         onAddCategory={vi.fn()}
+        {...subGridDefaults}
       />,
     )
 
@@ -250,6 +329,7 @@ describe('BudgetView', () => {
         availableCategories={[]}
         onChange={vi.fn()}
         onAddCategory={vi.fn()}
+        {...subGridDefaults}
       />,
     )
 
@@ -280,6 +360,7 @@ describe('BudgetView', () => {
         availableCategories={[]}
         onChange={onChange}
         onAddCategory={vi.fn()}
+        {...subGridDefaults}
       />,
     )
 
@@ -295,6 +376,7 @@ describe('BudgetView', () => {
         availableCategories={[]}
         onChange={onChange}
         onAddCategory={vi.fn()}
+        {...subGridDefaults}
       />,
     )
 
@@ -322,6 +404,7 @@ describe('BudgetView', () => {
         availableCategories={['Food']}
         onChange={onChange}
         onAddCategory={onAddCategory}
+        {...subGridDefaults}
       />,
     )
 
@@ -340,6 +423,7 @@ describe('BudgetView', () => {
         availableCategories={['Food']}
         onChange={onChange}
         onAddCategory={onAddCategory}
+        {...subGridDefaults}
       />,
     )
 
@@ -371,6 +455,7 @@ describe('BudgetView', () => {
         availableCategories={['Rent']}
         onChange={onChange}
         onAddCategory={onAddCategory}
+        {...subGridDefaults}
       />,
     )
 
@@ -406,6 +491,7 @@ describe('BudgetView', () => {
         availableCategories={[]}
         onChange={onChange}
         onAddCategory={vi.fn()}
+        {...subGridDefaults}
       />,
     )
 
@@ -422,12 +508,61 @@ describe('BudgetView', () => {
         availableCategories={[]}
         onChange={onChange}
         onAddCategory={vi.fn()}
+        {...subGridDefaults}
       />,
     )
 
     const updated = current[0]
     expect(updated.discretionary).toEqual([])
     expect(updated.bills.map((r) => r.category)).toEqual(['Rent', 'Food'])
+  })
+
+  it('clicking a budget cell shows the matching transactions below the budget', async () => {
+    const user = userEvent.setup()
+    const b: Budget = {
+      name: 'B',
+      startMonth: '2026-01',
+      income: [],
+      bills: [],
+      discretionary: [makeRow('Food'), makeRow('Rent')],
+    }
+    // Two records in 2026-02 against "Food" — only these should show up; a
+    // third "Rent" record in the same month proves we're filtering by category.
+    const records: TransactionRecord[] = [
+      makeRecord({ date: '2026-02-05', category: 'Food', merchant: 'Cafe' }),
+      makeRecord({ date: '2026-02-19', category: 'Food', merchant: 'Diner' }),
+      makeRecord({ date: '2026-02-10', category: 'Rent', merchant: 'Landlord' }),
+    ]
+
+    render(
+      <BudgetView
+        budgets={[b]}
+        availableCategories={[]}
+        onChange={vi.fn()}
+        onAddCategory={vi.fn()}
+        {...subGridDefaults}
+        records={records}
+      />,
+    )
+
+    // Before any click: hint copy is shown, no transactions visible.
+    expect(
+      screen.getByText(/Click a budget cell to show the transactions/i),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Cafe')).not.toBeInTheDocument()
+
+    // The Food row's 2026-02 cell — every value cell renders as $0.00 here,
+    // so pick by position: 2nd row of the discretionary section, 2nd month.
+    // Querying by row category narrows to the Food row first.
+    const foodRow = screen.getByText('Food').closest('tr')!
+    const foodCells = within(foodRow).getAllByText('$0.00')
+    // The row totals cell is a $0.00 too; first 12 cells are months.
+    await user.click(foodCells[1]) // 2026-02
+
+    // The two Food records show up in the sub-grid; Rent does not.
+    expect(screen.getByText('Cafe')).toBeInTheDocument()
+    expect(screen.getByText('Diner')).toBeInTheDocument()
+    expect(screen.queryByText('Landlord')).not.toBeInTheDocument()
   })
 })
 

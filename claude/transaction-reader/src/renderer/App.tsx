@@ -580,6 +580,15 @@ export default function App(): JSX.Element {
           availableCategories={availableCategories}
           onChange={setBudgets}
           onAddCategory={handleAddCategory}
+          records={history.present}
+          categories={categories}
+          active={view === 'budget'}
+          resortKey={resortKey}
+          onSetField={handleSetField}
+          onRemoveOverride={handleRemoveOverride}
+          onToggleIgnored={handleToggleIgnored}
+          onDelete={handleDelete}
+          onFill={handleFill}
         />
       </div>
       <div className={`tab-panel${view !== 'settings' ? ' tab-panel-hidden' : ''}`}>

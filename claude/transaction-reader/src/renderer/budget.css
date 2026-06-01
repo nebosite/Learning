@@ -40,10 +40,40 @@
 }
 
 .budget-table-wrap {
-  flex: 1;
+  flex: 0 1 auto;
+  max-height: 50%;
   min-height: 0;
   overflow: auto;
   border: 1px solid #ccc;
+}
+
+/* The embedded transaction grid that shows records behind the selected cell.
+   Fills the remaining vertical space below the budget table. */
+.budget-edit {
+  flex: 1 1 0;
+  min-height: 0;
+  margin-top: 10px;
+  display: flex;
+}
+
+.budget-edit .grid-container {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.budget-edit .grid-scroll {
+  height: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.budget-hint {
+  margin: 0;
+  padding: 12px;
+  color: #666;
+  font-size: 13px;
 }
 
 .budget-table {
@@ -169,6 +199,13 @@
 .budget-cell {
   text-align: right;
   cursor: text;
+}
+
+/* A cell that's currently selected (drives the sub-grid below). Painted on
+   top of the normal cell background; the editing-cell input overrides this. */
+.budget-cell-selected {
+  background: #3b82f6;
+  color: white;
 }
 
 .budget-cell-editing {
