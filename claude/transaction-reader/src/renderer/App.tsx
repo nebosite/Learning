@@ -42,6 +42,12 @@ export default function App(): JSX.Element {
   // and their savedRef so dirty considers both.
   const [budgets, setBudgets] = useState<Budget[]>([])
   const [savedBudgetsRef, setSavedBudgetsRef] = useState<Budget[]>(budgets)
+  // Canonical keys of records imported during this session. Not persisted —
+  // cleared on New / Open and on initial load. Drives the bold-row styling
+  // in the transaction grids so the user can see what just came in.
+  const [sessionAddedKeys, setSessionAddedKeys] = useState<Set<string>>(
+    () => new Set(),
+  )
   const dirty =
     history.present !== savedRef || budgets !== savedBudgetsRef
 
@@ -51,6 +57,7 @@ export default function App(): JSX.Element {
       setSavedRef(records)
       setBudgets(fileBudgets)
       setSavedBudgetsRef(fileBudgets)
+      setSessionAddedKeys(new Set())
     },
     [],
   )
@@ -172,6 +179,16 @@ export default function App(): JSX.Element {
   async function handleImport(): Promise<void> {
     const result = await window.api.importCsv(history.present)
     if (!result) return
+    // Flag every key in the merged master that wasn't in the pre-import set —
+    // those are this import's new rows. Existing keys stay un-flagged.
+    const priorKeys = new Set(history.present.map((r) => r.key))
+    setSessionAddedKeys((prev) => {
+      const next = new Set(prev)
+      for (const r of result.master.records) {
+        if (!priorKeys.has(r.key)) next.add(r.key)
+      }
+      return next
+    })
     // Make the import a single undoable step rather than overwriting history;
     // the merged records aren't on disk yet, so this leaves the doc dirty.
     apply(() => result.master.records)
@@ -552,6 +569,7 @@ export default function App(): JSX.Element {
           categories={categories}
           active={view === 'transactions'}
           resortKey={resortKey}
+          sessionAddedKeys={sessionAddedKeys}
           onSetField={handleSetField}
           onRemoveOverride={handleRemoveOverride}
           onToggleIgnored={handleToggleIgnored}
@@ -566,6 +584,7 @@ export default function App(): JSX.Element {
           categories={categories}
           active={view === 'report'}
           resortKey={resortKey}
+          sessionAddedKeys={sessionAddedKeys}
           onSetField={handleSetField}
           onRemoveOverride={handleRemoveOverride}
           onToggleIgnored={handleToggleIgnored}
@@ -584,6 +603,7 @@ export default function App(): JSX.Element {
           categories={categories}
           active={view === 'budget'}
           resortKey={resortKey}
+          sessionAddedKeys={sessionAddedKeys}
           onSetField={handleSetField}
           onRemoveOverride={handleRemoveOverride}
           onToggleIgnored={handleToggleIgnored}

@@ -143,6 +143,8 @@ interface ReportProps {
   categories: string[]
   active: boolean
   resortKey: number
+  /** Forwarded to the embedded sub-grid for bold styling of session imports. */
+  sessionAddedKeys?: Set<string>
   onSetField: (
     index: number,
     field: keyof OriginalTransaction,
@@ -163,6 +165,7 @@ export function Report({
   categories,
   active,
   resortKey,
+  sessionAddedKeys,
   onSetField,
   onRemoveOverride,
   onToggleIgnored,
@@ -574,6 +577,7 @@ export function Report({
             active={active}
             resortKey={resortKey}
             showFilter={false}
+            sessionAddedKeys={sessionAddedKeys}
             onSetField={(li, field, value) => onSetField(matchingIndices[li], field, value)}
             onRemoveOverride={(li, field) => onRemoveOverride(matchingIndices[li], field)}
             onToggleIgnored={(li) => onToggleIgnored(matchingIndices[li])}

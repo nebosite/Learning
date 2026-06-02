@@ -131,6 +131,23 @@ describe('Grid', () => {
     expect(screen.queryByDisplayValue('Netflix')).not.toBeInTheDocument()
   })
 
+  it('rows whose key is in sessionAddedKeys render with the grid-row-added class', () => {
+    const a = rec({ merchant: 'Netflix' })
+    const b = rec({ merchant: 'Hulu' })
+    const { container } = render(
+      <Grid
+        {...commonProps()}
+        records={[a, b]}
+        sessionAddedKeys={new Set([a.key])}
+      />,
+    )
+    const aCell = container.querySelector('.grid-row-added')
+    expect(aCell).not.toBeNull()
+    expect(aCell?.textContent).toContain('Netflix')
+    // Only one row is flagged — Hulu is pre-existing and stays unbolded.
+    expect(container.querySelectorAll('.grid-row-added')).toHaveLength(1)
+  })
+
   it('typing in the filter narrows the displayed rows', async () => {
     const user = userEvent.setup()
     render(

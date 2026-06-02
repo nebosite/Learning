@@ -4,7 +4,7 @@
     100px               /* Date */
     140px               /* Account */
     120px               /* Merchant */
-    120px               /* Category */
+    180px               /* Category */
     100px               /* Amount */
     minmax(260px, 1fr)  /* Statement (only flexible column) */
     100px               /* Notes */
@@ -184,6 +184,13 @@
    is not covered by the rows rendered below it. */
 .grid-row-editing {
   z-index: 3;
+}
+
+/* Rows for records imported during this session — drawn bold so the user
+   can spot what just came in. Not persisted to disk: the flag lives only in
+   App state. */
+.grid-row-added {
+  font-weight: 700;
 }
 
 .cell {

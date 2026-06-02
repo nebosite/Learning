@@ -299,6 +299,8 @@ interface BudgetProps {
   /** Whether the Budget tab is the visible one (forwarded to the sub-Grid). */
   active: boolean
   resortKey: number
+  /** Forwarded to the embedded sub-grid for bold styling of session imports. */
+  sessionAddedKeys?: Set<string>
   onSetField: (
     index: number,
     field: keyof OriginalTransaction,
@@ -323,6 +325,7 @@ export function BudgetView({
   categories,
   active,
   resortKey,
+  sessionAddedKeys,
   onSetField,
   onRemoveOverride,
   onToggleIgnored,
@@ -560,6 +563,7 @@ export function BudgetView({
             active={active}
             resortKey={resortKey}
             showFilter={false}
+            sessionAddedKeys={sessionAddedKeys}
             onSetField={(li, field, value) =>
               onSetField(matchingIndices[li], field, value)
             }

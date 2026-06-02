@@ -94,6 +94,11 @@ interface GridProps {
   resortKey: number
   /** Show the filter bar (text/date/amount). Defaults to true. */
   showFilter?: boolean
+  /**
+   * Canonical keys of records imported during this session. Rows whose key
+   * is in the set render with bold text. Not persisted to disk.
+   */
+  sessionAddedKeys?: Set<string>
   /** Called whenever the filter changes, so other views can mirror it. */
   onFilterChange?: (filter: FilterCriteria) => void
   onSetField: (
@@ -114,6 +119,7 @@ export function Grid({
   active,
   resortKey,
   showFilter = true,
+  sessionAddedKeys,
   onFilterChange,
   onSetField,
   onRemoveOverride,
@@ -432,6 +438,7 @@ export function Grid({
         key={i}
         top={v * ROW_HEIGHT}
         record={records[i]}
+        sessionAdded={sessionAddedKeys?.has(records[i].key) ?? false}
         categories={categories}
         editingField={editing && editing.row === i ? editing.field : null}
         fillField={inFillRange ? drag.field : null}
@@ -561,6 +568,8 @@ export function Grid({
 interface RowProps {
   top: number
   record: TransactionRecord
+  /** True for rows whose record was imported this session — renders bold. */
+  sessionAdded: boolean
   categories: string[]
   editingField: EditableField | null
   /** The column highlighted by an in-progress drag-copy on this row, or null. */
@@ -582,6 +591,7 @@ interface RowProps {
 function Row({
   top,
   record,
+  sessionAdded,
   categories,
   editingField,
   fillField,
@@ -596,7 +606,7 @@ function Row({
 }: RowProps): JSX.Element {
   return (
     <div
-      className={`grid-row${editingField === 'category' ? ' grid-row-editing' : ''}`}
+      className={`grid-row${editingField === 'category' ? ' grid-row-editing' : ''}${sessionAdded ? ' grid-row-added' : ''}`}
       style={{ top }}
     >
       {COLUMNS.map((col) => (
