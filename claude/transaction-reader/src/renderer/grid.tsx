@@ -210,6 +210,7 @@ export function Grid({
   orderRef.current = order
   displayCountRef.current = displayCount
 
+
   // Map a cursor Y position to the display row under it (clamped to range).
   function viewPosFromY(clientY: number): number {
     const el = scrollRef.current

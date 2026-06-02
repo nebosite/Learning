@@ -2,15 +2,16 @@
   display: flex;
   flex-direction: column;
   height: calc(100vh - 120px);
+  /* Confine scrolling to the inner grids — never the whole tab. */
+  overflow: hidden;
 }
 
-/* The pivot table and the merchant selector share one horizontal row,
-   capped at half the panel height. Each child scrolls independently. */
+/* Section 1: pivot table + merchant selector — 66% of the tab height. Each
+   child scrolls independently. */
 .report-top-row {
   display: flex;
   gap: 10px;
-  flex: 0 1 auto;
-  max-height: 50%;
+  flex: 0 0 66%;
   min-height: 0;
   margin-bottom: 10px;
 }
@@ -257,7 +258,8 @@
   background: #dbeafe;
 }
 
-/* The embedded edit grid fills the space left below the report table. */
+/* Section 2: embedded transaction grid for the selected cell — takes
+   whatever vertical space is left between sections 1 and 3. */
 .report-edit {
   flex: 1 1 0;
   min-height: 0;
@@ -275,4 +277,28 @@
   height: auto;
   flex: 1;
   min-height: 0;
+}
+
+/* Section 3: transactions total strip — fixed 40px. */
+.report-total {
+  flex: 0 0 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  margin-top: 10px;
+  background: #ededed;
+  border: 1px solid #ccc;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.report-total-label {
+  color: #444;
+  font-weight: 600;
+}
+
+.report-total-value {
+  font-weight: 700;
+  font-size: 15px;
 }

@@ -6,7 +6,9 @@ import { canonicalRecordKey } from '../shared/records'
 import {
   BudgetView,
   addMonths,
+  budgetCellStatus,
   deleteRow,
+  formatBudgetAmount,
   monthsForBudget,
   moveRow,
   recordsForBudgetCell,
@@ -14,6 +16,7 @@ import {
   rowTotal,
   sectionGrandTotal,
   sectionMonthlyTotals,
+  statusFromSum,
   updateCell,
 } from './budget'
 
@@ -250,6 +253,96 @@ describe('updateCell', () => {
     const before = JSON.parse(JSON.stringify(b))
     updateCell(b, 'discretionary', 0, 1, 99)
     expect(b).toEqual(before)
+  })
+})
+
+describe('formatBudgetAmount', () => {
+  it('rounds to whole dollars with no decimal', () => {
+    expect(formatBudgetAmount(0)).toBe('$0')
+    expect(formatBudgetAmount(10)).toBe('$10')
+    expect(formatBudgetAmount(10.49)).toBe('$10')
+    expect(formatBudgetAmount(10.5)).toBe('$11')
+    expect(formatBudgetAmount(-23.4)).toBe('-$23')
+    expect(formatBudgetAmount(-23.7)).toBe('-$24')
+  })
+})
+
+describe('statusFromSum', () => {
+  it("returns 'empty' only when the month has no records at all", () => {
+    expect(statusFromSum(undefined, 100, false)).toBe('empty')
+    expect(statusFromSum({ sum: 0, count: 0 }, 100, false)).toBe('empty')
+  })
+
+  it("returns 'on-target' when the month has records but this category has none", () => {
+    // No matches but month has SOMETHING — nothing happened here, which is fine.
+    expect(statusFromSum(undefined, 100, true)).toBe('on-target')
+    expect(statusFromSum({ sum: 0, count: 0 }, 100, true)).toBe('on-target')
+  })
+
+  it("returns 'on-target' when |sum| is within $1 of |budget|", () => {
+    expect(statusFromSum({ sum: -100, count: 1 }, 100, true)).toBe('on-target')
+    expect(statusFromSum({ sum: -100.99, count: 2 }, 100, true)).toBe('on-target')
+    expect(statusFromSum({ sum: -99.01, count: 1 }, 100, true)).toBe('on-target')
+    // Exactly $1 over still counts as on-target (boundary is inclusive).
+    expect(statusFromSum({ sum: -101, count: 1 }, 100, true)).toBe('on-target')
+  })
+
+  it("returns 'under' when |sum| is less than |budget| by more than $1", () => {
+    expect(statusFromSum({ sum: -90, count: 1 }, 100, true)).toBe('under')
+    // Income (positive sum) compared with positive budget.
+    expect(statusFromSum({ sum: 4800, count: 1 }, 5000, true)).toBe('under')
+  })
+
+  it("returns 'over' when |sum| exceeds |budget| by more than $1", () => {
+    expect(statusFromSum({ sum: -110, count: 1 }, 100, true)).toBe('over')
+    expect(statusFromSum({ sum: 5200, count: 1 }, 5000, true)).toBe('over')
+  })
+})
+
+describe('budgetCellStatus', () => {
+  it("flags a category that spent within the budget as 'on-target'", () => {
+    const b = makeBudget({
+      startMonth: '2026-01',
+      bills: [makeRow('Rent', [1500, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])],
+    })
+    const records = [makeRecord({ date: '2026-01-03', category: 'Rent', amount: -1500 })]
+    expect(budgetCellStatus(records, b, 'bills', 0, 0)).toBe('on-target')
+  })
+
+  it("flags overspending as 'over' (compared on magnitudes)", () => {
+    const b = makeBudget({
+      bills: [makeRow('Rent', [1500, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])],
+    })
+    const records = [makeRecord({ date: '2026-01-03', category: 'Rent', amount: -1700 })]
+    expect(budgetCellStatus(records, b, 'bills', 0, 0)).toBe('over')
+  })
+
+  it("flags underspending as 'under' (compared on magnitudes)", () => {
+    const b = makeBudget({
+      bills: [makeRow('Rent', [1500, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])],
+    })
+    const records = [makeRecord({ date: '2026-01-03', category: 'Rent', amount: -1000 })]
+    expect(budgetCellStatus(records, b, 'bills', 0, 0)).toBe('under')
+  })
+
+  it("returns 'empty' when no records exist for the month at all", () => {
+    const b = makeBudget({
+      bills: [makeRow('Rent', [1500, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])],
+    })
+    // Wrong month: cell 0 is 2026-01, only record is 2026-02. The 2026-01
+    // cell has no records of any kind → empty.
+    const records = [makeRecord({ date: '2026-02-03', category: 'Rent', amount: -1500 })]
+    expect(budgetCellStatus(records, b, 'bills', 0, 0)).toBe('empty')
+  })
+
+  it("returns 'on-target' when the month has records but none in this category", () => {
+    const b = makeBudget({
+      bills: [makeRow('Rent', [1500, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])],
+    })
+    // The 2026-01 month has a Food record but no Rent — Rent cell is
+    // on-target (nothing happened in this category, which is fine).
+    const records = [makeRecord({ date: '2026-01-03', category: 'Food', amount: -25 })]
+    expect(budgetCellStatus(records, b, 'bills', 0, 0)).toBe('on-target')
   })
 })
 
@@ -551,18 +644,26 @@ describe('BudgetView', () => {
     ).toBeInTheDocument()
     expect(screen.queryByText('Cafe')).not.toBeInTheDocument()
 
-    // The Food row's 2026-02 cell — every value cell renders as $0.00 here,
-    // so pick by position: 2nd row of the discretionary section, 2nd month.
+    // The Food row's 2026-02 cell — every value cell renders as $0 here, so
+    // pick by position: 2nd row of the discretionary section, 2nd month.
     // Querying by row category narrows to the Food row first.
     const foodRow = screen.getByText('Food').closest('tr')!
-    const foodCells = within(foodRow).getAllByText('$0.00')
-    // The row totals cell is a $0.00 too; first 12 cells are months.
+    const foodCells = within(foodRow).getAllByText('$0')
+    // The row totals cell is a $0 too; first 12 cells are months.
     await user.click(foodCells[1]) // 2026-02
 
     // The two Food records show up in the sub-grid; Rent does not.
     expect(screen.getByText('Cafe')).toBeInTheDocument()
     expect(screen.getByText('Diner')).toBeInTheDocument()
     expect(screen.queryByText('Landlord')).not.toBeInTheDocument()
+
+    // Section 3 total: sum of the two displayed amounts (-10 each = -$20.00).
+    // Scoped via the .budget-total wrapper so we don't collide with the per-row
+    // amount cells that also format as "-$10.00".
+    const totalSection = document.querySelector('.budget-total') as HTMLElement
+    expect(totalSection).not.toBeNull()
+    expect(totalSection.textContent).toContain('Transactions total')
+    expect(totalSection.textContent).toContain('-$20.00')
   })
 })
 

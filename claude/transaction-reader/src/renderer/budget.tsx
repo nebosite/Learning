@@ -10,6 +10,29 @@ import { effectiveDate, effectiveValue } from '../shared/records'
 import { Grid, formatAmount } from './grid'
 import './budget.css'
 
+/**
+ * Budget values display as whole dollars (no decimals). The stored value
+ * keeps full precision — this is display-only — so the editor still accepts
+ * what the user typed.
+ */
+export function formatBudgetAmount(n: number): string {
+  const rounded = Math.round(n)
+  const sign = rounded < 0 ? '-' : ''
+  return `${sign}$${Math.abs(rounded)}`
+}
+
+/**
+ * A budget cell's relationship to the matching transactions, used to color
+ * the cell background:
+ *   - 'empty'     — no matching transactions in this category+month
+ *   - 'on-target' — |sum| within $1 of |budgeted|
+ *   - 'under'     — |sum| < |budgeted| by more than $1
+ *   - 'over'      — |sum| > |budgeted| by more than $1
+ * Magnitudes are compared so the rule works for both spending (negative
+ * transactions, positive budget) and income (both positive).
+ */
+export type CellStatus = 'empty' | 'on-target' | 'under' | 'over'
+
 const SECTIONS: { id: BudgetSection; label: string }[] = [
   { id: 'income', label: 'Income' },
   { id: 'bills', label: 'Bills' },
@@ -178,6 +201,68 @@ export function recordsForBudgetCell(
   return out
 }
 
+/**
+ * Status used to color a budget cell's background. See {@link CellStatus}
+ * for what each value means. Magnitudes are compared so the rule applies
+ * symmetrically to income (positive transactions) and spending (negative).
+ */
+/**
+ * The status derivation from a precomputed (sum, count) entry — the same
+ * comparison budgetCellStatus performs, factored out so the grid renderer
+ * (which already aggregates records once per render) can call it per cell.
+ *
+ * `monthHasAnyRecords` distinguishes "no imports for the month at all"
+ * (transparent) from "imports exist, this category just had nothing"
+ * (on-target — nothing happened here, which is fine).
+ */
+export function statusFromSum(
+  entry: { sum: number; count: number } | undefined,
+  budgeted: number,
+  monthHasAnyRecords: boolean,
+): CellStatus {
+  if (!monthHasAnyRecords) return 'empty'
+  if (!entry || entry.count === 0) return 'on-target'
+  const diff = Math.abs(entry.sum) - Math.abs(budgeted)
+  if (Math.abs(diff) <= 1) return 'on-target'
+  return diff > 0 ? 'over' : 'under'
+}
+
+export function budgetCellStatus(
+  records: readonly TransactionRecord[],
+  budget: Budget,
+  section: BudgetSection,
+  rowIndex: number,
+  monthIndex: number,
+): CellStatus {
+  const row = budget[section][rowIndex]
+  if (!row) return 'empty'
+  const cat = row.category.trim().toLowerCase()
+  if (cat === '') return 'empty'
+  const month = addMonths(budget.startMonth, monthIndex)
+
+  // One pass: track whether *any* non-ignored record exists for this month
+  // (in any category) AND sum the matching (category, month) records.
+  let monthHasAnyRecords = false
+  let sum = 0
+  let count = 0
+  for (const r of records) {
+    if (r.ignored) continue
+    if (effectiveDate(r).slice(0, 7) !== month) continue
+    monthHasAnyRecords = true
+    const cv = effectiveValue(r, 'category')
+    const rc = typeof cv === 'string' ? cv.trim().toLowerCase() : ''
+    if (rc !== cat) continue
+    const av = effectiveValue(r, 'amount')
+    if (typeof av === 'number') sum += av
+    count++
+  }
+  return statusFromSum(
+    count === 0 ? undefined : { sum, count },
+    row.amounts[monthIndex] ?? 0,
+    monthHasAnyRecords,
+  )
+}
+
 export function updateCell(
   budget: Budget,
   section: BudgetSection,
@@ -276,6 +361,35 @@ export function BudgetView({
     onChange(budgets.map((b) => (b.name === selected.name ? updater(b) : b)))
   }
 
+  // Pre-aggregate non-ignored records by (category-lower | YYYY-MM) so the
+  // per-cell status lookup during render is O(1). Also tracks which months
+  // have *any* records (in any category) so the empty/on-target distinction
+  // can be made without rescanning records per cell. Re-runs only when the
+  // records array reference changes.
+  const { monthlyCategorySums, monthsWithRecords } = useMemo(() => {
+    const sums = new Map<string, { sum: number; count: number }>()
+    const months = new Set<string>()
+    for (const r of records) {
+      if (r.ignored) continue
+      const month = effectiveDate(r).slice(0, 7)
+      months.add(month)
+      const cv = effectiveValue(r, 'category')
+      const cat = typeof cv === 'string' ? cv.trim().toLowerCase() : ''
+      if (cat === '') continue
+      const av = effectiveValue(r, 'amount')
+      const amt = typeof av === 'number' ? av : 0
+      const k = `${cat}|${month}`
+      const entry = sums.get(k)
+      if (entry) {
+        entry.sum += amt
+        entry.count++
+      } else {
+        sums.set(k, { sum: amt, count: 1 })
+      }
+    }
+    return { monthlyCategorySums: sums, monthsWithRecords: months }
+  }, [records])
+
   const matchingIndices = useMemo(() => {
     if (!selected || !selectedCell) return []
     return recordsForBudgetCell(
@@ -291,6 +405,16 @@ export function BudgetView({
     () => matchingIndices.map((i) => records[i]),
     [matchingIndices, records],
   )
+
+  // Sum of the sub-grid amounts — shown in the bottom "section 3" strip.
+  const subTotal = useMemo(() => {
+    let sum = 0
+    for (const r of subRecords) {
+      const v = effectiveValue(r, 'amount')
+      if (typeof v === 'number') sum += v
+    }
+    return sum
+  }, [subRecords])
 
   /**
    * Add a category row to the selected budget's section. If the category is
@@ -373,6 +497,8 @@ export function BudgetView({
           drag={drag}
           editing={editing}
           selectedCell={selectedCell}
+          monthlyCategorySums={monthlyCategorySums}
+          monthsWithRecords={monthsWithRecords}
           addingSection={addingSection}
           availableCategories={availableCategories}
           onStartAdd={(section) => setAddingSection(section)}
@@ -457,6 +583,15 @@ export function BudgetView({
         )}
       </div>
 
+      <div className="budget-total">
+        <span className="budget-total-label">Transactions total</span>
+        <span
+          className={`budget-total-value${subTotal < 0 ? ' amount-negative' : ''}`}
+        >
+          {selected && selectedCell ? formatAmount(subTotal) : ''}
+        </span>
+      </div>
+
       {newOpen && (
         <NewBudgetModal
           existingNames={budgets.map((b) => b.name)}
@@ -473,6 +608,10 @@ interface BudgetGridProps {
   drag: DragSource | null
   editing: { section: BudgetSection; row: number; month: number } | null
   selectedCell: { section: BudgetSection; row: number; month: number } | null
+  /** Per (category-lower | YYYY-MM) sum + count of non-ignored records. */
+  monthlyCategorySums: Map<string, { sum: number; count: number }>
+  /** YYYY-MM months that have at least one non-ignored record (any category). */
+  monthsWithRecords: Set<string>
   addingSection: BudgetSection | null
   availableCategories: string[]
   onStartAdd: (section: BudgetSection) => void
@@ -499,6 +638,8 @@ function BudgetGrid({
   drag,
   editing,
   selectedCell,
+  monthlyCategorySums,
+  monthsWithRecords,
   addingSection,
   availableCategories,
   onStartAdd,
@@ -618,27 +759,49 @@ function BudgetGrid({
                       </span>
                     </div>
                   </th>
-                  {months.map((_m, mi) => (
-                    <BudgetCell
-                      key={mi}
-                      value={row.amounts[mi] ?? 0}
-                      editing={
-                        editing?.section === sec.id &&
-                        editing.row === ri &&
-                        editing.month === mi
-                      }
-                      selected={
-                        selectedCell?.section === sec.id &&
-                        selectedCell.row === ri &&
-                        selectedCell.month === mi
-                      }
-                      onSelect={() => onSelectCell(sec.id, ri, mi)}
-                      onStart={() => onStartEdit(sec.id, ri, mi)}
-                      onCancel={onCancelEdit}
-                      onCommit={(v) => onCommitEdit(sec.id, ri, mi, v)}
-                    />
-                  ))}
-                  <td className="budget-total-col">{formatAmount(rowTotal(row))}</td>
+                  {months.map((m, mi) => {
+                    const catKey = row.category.trim().toLowerCase()
+                    const entry =
+                      catKey === ''
+                        ? undefined
+                        : monthlyCategorySums.get(`${catKey}|${m}`)
+                    const status =
+                      catKey === ''
+                        ? 'empty'
+                        : statusFromSum(
+                            entry,
+                            row.amounts[mi] ?? 0,
+                            monthsWithRecords.has(m),
+                          )
+                    return (
+                      <BudgetCell
+                        key={mi}
+                        value={row.amounts[mi] ?? 0}
+                        status={status}
+                        editing={
+                          editing?.section === sec.id &&
+                          editing.row === ri &&
+                          editing.month === mi
+                        }
+                        selected={
+                          selectedCell?.section === sec.id &&
+                          selectedCell.row === ri &&
+                          selectedCell.month === mi
+                        }
+                        onSelect={() => onSelectCell(sec.id, ri, mi)}
+                        onStart={() => onStartEdit(sec.id, ri, mi)}
+                        onCancel={onCancelEdit}
+                        onCommit={(v) => onCommitEdit(sec.id, ri, mi, v)}
+                      />
+                    )
+                  })}
+                  <td
+                    className={`budget-total-col${
+                      rowTotal(row) < 0 ? ' budget-cell-negative' : ''
+                    }`}
+                  >
+                    {formatBudgetAmount(rowTotal(row))}
+                  </td>
                 </tr>
               ))}
               <tr
@@ -648,11 +811,20 @@ function BudgetGrid({
               >
                 <th className="budget-cat-col">Total</th>
                 {monthlyTotals.map((v, i) => (
-                  <td key={i} className="budget-cell">
-                    {formatAmount(v)}
+                  <td
+                    key={i}
+                    className={`budget-cell${v < 0 ? ' budget-cell-negative' : ''}`}
+                  >
+                    {formatBudgetAmount(v)}
                   </td>
                 ))}
-                <td className="budget-total-col">{formatAmount(grandTotal)}</td>
+                <td
+                  className={`budget-total-col${
+                    grandTotal < 0 ? ' budget-cell-negative' : ''
+                  }`}
+                >
+                  {formatBudgetAmount(grandTotal)}
+                </td>
               </tr>
               {si < SECTIONS.length - 1 && (
                 <tr className="budget-spacer" aria-hidden="true">
@@ -669,6 +841,7 @@ function BudgetGrid({
 
 interface BudgetCellProps {
   value: number
+  status: CellStatus
   editing: boolean
   selected: boolean
   onSelect: () => void
@@ -679,6 +852,7 @@ interface BudgetCellProps {
 
 function BudgetCell({
   value,
+  status,
   editing,
   selected,
   onSelect,
@@ -699,15 +873,17 @@ function BudgetCell({
   }, [editing])
 
   if (!editing) {
+    const statusClass = status === 'empty' ? '' : ` budget-cell-${status}`
+    const negativeClass = value < 0 ? ' budget-cell-negative' : ''
     return (
       <td
-        className={`budget-cell${selected ? ' budget-cell-selected' : ''}`}
+        className={`budget-cell${statusClass}${negativeClass}${selected ? ' budget-cell-selected' : ''}`}
         onClick={() => {
           onSelect()
           onStart()
         }}
       >
-        {formatAmount(value)}
+        {formatBudgetAmount(value)}
       </td>
     )
   }

@@ -322,6 +322,16 @@ export function Report({
     [matchingIndices, records],
   )
 
+  // Sum of the sub-grid amounts — shown in the bottom "section 3" strip.
+  const subTotal = useMemo(() => {
+    let sum = 0
+    for (const r of subRecords) {
+      const v = effectiveValue(r, 'amount')
+      if (typeof v === 'number') sum += v
+    }
+    return sum
+  }, [subRecords])
+
   const monthCount = table.months.length
   const avgPerMonth = (total: number): number =>
     monthCount > 0 ? total / monthCount : 0
@@ -581,6 +591,14 @@ export function Report({
             Click a cell above to edit the transactions behind it.
           </p>
         )}
+      </div>
+      <div className="report-total">
+        <span className="report-total-label">Transactions total</span>
+        <span
+          className={`report-total-value${subTotal < 0 ? ' amount-negative' : ''}`}
+        >
+          {selected ? formatAmount(subTotal) : ''}
+        </span>
       </div>
     </div>
   )
