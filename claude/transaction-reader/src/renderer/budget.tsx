@@ -8,6 +8,7 @@ import type {
 } from '../shared/types'
 import { effectiveDate, effectiveValue } from '../shared/records'
 import { Grid, formatAmount } from './grid'
+import { defaultSpendingWindow } from './report'
 import './budget.css'
 
 /**
@@ -263,6 +264,114 @@ export function budgetCellStatus(
   )
 }
 
+/**
+ * Replace zero budget cells with values derived from the Spending Analysis
+ * pivot table (the past 12 complete calendar months of non-ignored records).
+ *
+ * Rules:
+ *  - Categories that appear in analysis but aren't in the budget are appended
+ *    to Discretionary (new rows start all-zero, then this fill applies).
+ *  - Matching is by month-of-year only — the year is ignored, so future
+ *    months can be filled from past data.
+ *  - Only cells whose current value is exactly 0 are written. Existing
+ *    non-zero values are left alone.
+ *  - The written value is the analysis sum rounded outward (magnitude-up)
+ *    to the nearest whole dollar (-47.30 → -48, 47.30 → 48).
+ *
+ * `now` is the reference date for the spending window — defaulted to the
+ * current time, overridable so tests can pin the window.
+ */
+export function autofillBudget(
+  records: readonly TransactionRecord[],
+  budget: Budget,
+  now: Date = new Date(),
+): Budget {
+  const window = defaultSpendingWindow(now)
+
+  // (category-lower → MM (two-digit) → signed sum) from the analysis window.
+  const byCatMM = new Map<string, Map<string, number>>()
+  // Preserve the first-seen casing of each category so a freshly-added row
+  // shows up the way the user typed it on the transaction side.
+  const displayCase = new Map<string, string>()
+  for (const r of records) {
+    if (r.ignored) continue
+    const date = effectiveDate(r)
+    if (date < window.from || date > window.to) continue
+    const cv = effectiveValue(r, 'category')
+    const cat = typeof cv === 'string' ? cv.trim() : ''
+    if (cat === '') continue
+    const catKey = cat.toLowerCase()
+    if (!displayCase.has(catKey)) displayCase.set(catKey, cat)
+    const mm = date.slice(5, 7)
+    const av = effectiveValue(r, 'amount')
+    const amt = typeof av === 'number' ? av : 0
+    let mmMap = byCatMM.get(catKey)
+    if (!mmMap) {
+      mmMap = new Map()
+      byCatMM.set(catKey, mmMap)
+    }
+    mmMap.set(mm, (mmMap.get(mm) ?? 0) + amt)
+  }
+
+  // Magnitude-preserving ceiling: -47.3 → -48, 47.3 → 48, -47 → -47, 0 → 0.
+  function ceilMagnitude(v: number): number {
+    if (v === 0) return 0
+    return v < 0 ? -Math.ceil(-v) : Math.ceil(v)
+  }
+
+  function findRow(
+    b: Budget,
+    catLower: string,
+  ): { section: BudgetSection; index: number } | null {
+    for (const sec of ['income', 'bills', 'discretionary'] as const) {
+      const idx = b[sec].findIndex(
+        (r) => r.category.trim().toLowerCase() === catLower,
+      )
+      if (idx !== -1) return { section: sec, index: idx }
+    }
+    return null
+  }
+
+  const next: Budget = {
+    ...budget,
+    income: budget.income.map((r) => ({ ...r, amounts: r.amounts.slice() })),
+    bills: budget.bills.map((r) => ({ ...r, amounts: r.amounts.slice() })),
+    discretionary: budget.discretionary.map((r) => ({
+      ...r,
+      amounts: r.amounts.slice(),
+    })),
+  }
+
+  const budgetMonths = monthsForBudget(budget.startMonth)
+
+  for (const [catKey, mmMap] of byCatMM) {
+    const found = findRow(next, catKey)
+    let section: BudgetSection
+    let rowIdx: number
+    if (found) {
+      section = found.section
+      rowIdx = found.index
+    } else {
+      section = 'discretionary'
+      next.discretionary.push({
+        category: displayCase.get(catKey) ?? catKey,
+        amounts: new Array<number>(12).fill(0),
+      })
+      rowIdx = next.discretionary.length - 1
+    }
+    const row = next[section][rowIdx]
+    for (let mi = 0; mi < 12; mi++) {
+      const bmm = budgetMonths[mi].slice(5, 7)
+      const v = mmMap.get(bmm)
+      if (v === undefined) continue
+      if (row.amounts[mi] !== 0) continue
+      row.amounts[mi] = ceilMagnitude(v)
+    }
+  }
+
+  return next
+}
+
 export function updateCell(
   budget: Budget,
   section: BudgetSection,
@@ -445,6 +554,26 @@ export function BudgetView({
     }))
   }
 
+  /**
+   * Run autofillBudget on the currently-selected budget and propagate any
+   * brand-new (case-insensitively-novel) categories to the customs list so
+   * the user can pick them later from other budgets / autocomplete.
+   */
+  function handleAutofill(): void {
+    if (!selected) return
+    const prevCatsLower = new Set<string>([
+      ...selected.income.map((r) => r.category.trim().toLowerCase()),
+      ...selected.bills.map((r) => r.category.trim().toLowerCase()),
+      ...selected.discretionary.map((r) => r.category.trim().toLowerCase()),
+    ])
+    const next = autofillBudget(records, selected)
+    for (const row of next.discretionary) {
+      const key = row.category.trim().toLowerCase()
+      if (!prevCatsLower.has(key)) onAddCategory(row.category)
+    }
+    onChange(budgets.map((b) => (b.name === selected.name ? next : b)))
+  }
+
   function handleCreate(name: string, startMonth: string): void {
     const rows: BudgetRow[] = availableCategories.map((category) => ({
       category,
@@ -485,6 +614,14 @@ export function BudgetView({
         </label>
         <button type="button" onClick={() => setNewOpen(true)}>
           New
+        </button>
+        <button
+          type="button"
+          onClick={handleAutofill}
+          disabled={!selected}
+          title="Fill zero budget cells from the Spending Analysis pivot table"
+        >
+          Autofill
         </button>
         {selected && (
           <span className="budget-range">

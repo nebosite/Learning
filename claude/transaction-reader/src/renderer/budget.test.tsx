@@ -6,6 +6,7 @@ import { canonicalRecordKey } from '../shared/records'
 import {
   BudgetView,
   addMonths,
+  autofillBudget,
   budgetCellStatus,
   deleteRow,
   formatBudgetAmount,
@@ -346,6 +347,140 @@ describe('budgetCellStatus', () => {
   })
 })
 
+describe('autofillBudget', () => {
+  // Pin the spending window so the test isn't time-dependent. With now =
+  // 2026-06-15 the window is 2025-06-01 → 2026-05-31 (12 complete months).
+  const now = new Date(2026, 5, 15)
+
+  it('fills zero cells of an existing row, leaving non-zero cells alone', () => {
+    const b = makeBudget({
+      startMonth: '2026-06',
+      discretionary: [
+        makeRow('Food', [
+          0, 0, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ]),
+      ],
+    })
+    // Three transactions in three different months under Food. The cell at
+    // index 2 (which is Aug 2026 in this budget) already has 100, so it
+    // should be left alone even though Aug 2025 has analysis data.
+    const records = [
+      // Jun 2025 → fills budget month 0 (Jun 2026)
+      makeRecord({ date: '2025-06-10', category: 'Food', amount: -47.3 }),
+      // Jul 2025 → fills budget month 1 (Jul 2026)
+      makeRecord({ date: '2025-07-04', category: 'Food', amount: -25.5 }),
+      // Aug 2025 → would fill budget month 2 (Aug 2026) — but it's non-zero.
+      makeRecord({ date: '2025-08-04', category: 'Food', amount: -99 }),
+    ]
+    const next = autofillBudget(records, b, now)
+    expect(next.discretionary[0].amounts).toEqual([
+      -48, // Jun: -47.30 → magnitude-up → -48
+      -26, // Jul: -25.50 → -26
+      100, // Aug: preserved
+      0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ])
+  })
+
+  it('adds a brand-new category to Discretionary with rounded amounts', () => {
+    const b = makeBudget({ startMonth: '2026-06' })
+    const records = [
+      makeRecord({ date: '2025-06-10', category: 'Coffee', amount: -12.3 }),
+      makeRecord({ date: '2025-12-20', category: 'Coffee', amount: -8 }),
+    ]
+    const next = autofillBudget(records, b, now)
+    expect(next.discretionary.map((r) => r.category)).toEqual(['Coffee'])
+    // Budget months are Jun-2026..May-2027. Jun fills from Jun-2025 (-12.3 →
+    // -13); Dec fills from Dec-2025 (-8 → -8).
+    const row = next.discretionary[0]
+    expect(row.amounts[0]).toBe(-13)
+    expect(row.amounts[6]).toBe(-8) // Dec is budget month index 6
+  })
+
+  it('fills future months from past data when MM matches (year ignored)', () => {
+    // Budget runs Mar 2026 → Feb 2027. Records are in 2025. Same-MM mapping
+    // should still fill the 2026/2027 months.
+    const b = makeBudget({
+      startMonth: '2026-03',
+      discretionary: [makeRow('Gas')],
+    })
+    const records = [
+      makeRecord({ date: '2025-07-10', category: 'Gas', amount: -60 }),
+      makeRecord({ date: '2025-12-10', category: 'Gas', amount: -90 }),
+    ]
+    const next = autofillBudget(records, b, now)
+    const row = next.discretionary[0]
+    // Budget months: 0=Mar26, 1=Apr26, 2=May26, 3=Jun26, 4=Jul26, ..., 9=Dec26
+    expect(row.amounts[4]).toBe(-60) // Jul 2026 filled from Jul 2025
+    expect(row.amounts[9]).toBe(-90) // Dec 2026 filled from Dec 2025
+    // Months without analysis data stay at 0.
+    expect(row.amounts[0]).toBe(0)
+  })
+
+  it('fills existing rows in any section (does not duplicate by adding to Discretionary)', () => {
+    const b = makeBudget({
+      startMonth: '2026-06',
+      bills: [makeRow('Rent', [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])],
+    })
+    const records = [
+      makeRecord({ date: '2025-06-01', category: 'Rent', amount: -1500 }),
+    ]
+    const next = autofillBudget(records, b, now)
+    // Stays in Bills — not duplicated into Discretionary.
+    expect(next.discretionary).toEqual([])
+    expect(next.bills[0].amounts[0]).toBe(-1500)
+  })
+
+  it("matches existing rows case-insensitively", () => {
+    const b = makeBudget({
+      startMonth: '2026-06',
+      discretionary: [makeRow('food')],
+    })
+    const records = [
+      makeRecord({ date: '2025-06-10', category: 'Food', amount: -20 }),
+    ]
+    const next = autofillBudget(records, b, now)
+    expect(next.discretionary).toHaveLength(1)
+    expect(next.discretionary[0].amounts[0]).toBe(-20)
+  })
+
+  it('ignores records flagged as ignored', () => {
+    const b = makeBudget({ startMonth: '2026-06' })
+    const records = [
+      makeRecord({
+        date: '2025-06-10',
+        category: 'Food',
+        amount: -20,
+        ignored: true,
+      }),
+    ]
+    const next = autofillBudget(records, b, now)
+    expect(next.discretionary).toEqual([])
+  })
+
+  it('skips records outside the analysis window', () => {
+    const b = makeBudget({ startMonth: '2026-06' })
+    // 2024-06-10 is before the 2025-06-01 → 2026-05-31 window.
+    const records = [
+      makeRecord({ date: '2024-06-10', category: 'Food', amount: -20 }),
+    ]
+    const next = autofillBudget(records, b, now)
+    expect(next.discretionary).toEqual([])
+  })
+
+  it('does not mutate the input budget', () => {
+    const b = makeBudget({
+      startMonth: '2026-06',
+      discretionary: [makeRow('Food')],
+    })
+    const before = JSON.parse(JSON.stringify(b))
+    const records = [
+      makeRecord({ date: '2025-06-10', category: 'Food', amount: -20 }),
+    ]
+    autofillBudget(records, b, now)
+    expect(b).toEqual(before)
+  })
+})
+
 describe('recordsForBudgetCell', () => {
   it('returns indices whose effective category and month match (case-insensitive)', () => {
     const records = [
@@ -608,6 +743,70 @@ describe('BudgetView', () => {
     const updated = current[0]
     expect(updated.discretionary).toEqual([])
     expect(updated.bills.map((r) => r.category)).toEqual(['Rent', 'Food'])
+  })
+
+  it("clicking Autofill fills zero cells and registers brand-new categories with onAddCategory", async () => {
+    const user = userEvent.setup()
+    // Build a budget that starts in the same month as the records below so
+    // the autofill mapping is straightforward.
+    const startMonth = new Date().toISOString().slice(0, 7)
+    const b: Budget = {
+      name: 'B',
+      startMonth,
+      income: [],
+      bills: [],
+      discretionary: [makeRow('Food')],
+    }
+    let current = [b]
+    const onChange = vi.fn<(next: Budget[]) => void>((next) => {
+      current = next
+    })
+    const onAddCategory = vi.fn<(name: string) => void>()
+
+    // Records: a Food entry in the budget's start month (one year earlier so
+    // it falls within the default 12-month analysis window), plus a
+    // brand-new "Coffee" category to ensure auto-add fires.
+    const [yStr, mStr] = startMonth.split('-')
+    const prevYear = String(Number(yStr) - 1)
+    const records: TransactionRecord[] = [
+      makeRecord({
+        date: `${prevYear}-${mStr}-15`,
+        category: 'Food',
+        amount: -42.1,
+      }),
+      makeRecord({
+        date: `${prevYear}-${mStr}-20`,
+        category: 'Coffee',
+        amount: -10,
+      }),
+    ]
+
+    render(
+      <BudgetView
+        budgets={current}
+        availableCategories={[]}
+        onChange={onChange}
+        onAddCategory={onAddCategory}
+        {...subGridDefaults}
+        records={records}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Autofill' }))
+
+    expect(onChange).toHaveBeenCalledOnce()
+    const updated = current[0]
+    // Food row's first month is filled with -43 (magnitude-up of -42.1).
+    const foodRow = updated.discretionary.find((r) => r.category === 'Food')!
+    expect(foodRow.amounts[0]).toBe(-43)
+    // Coffee was novel → auto-added to Discretionary.
+    const coffeeRow = updated.discretionary.find((r) => r.category === 'Coffee')
+    expect(coffeeRow).toBeDefined()
+    expect(coffeeRow!.amounts[0]).toBe(-10)
+    // ...and Coffee was registered with onAddCategory (Food was not — it
+    // was already in the budget).
+    expect(onAddCategory).toHaveBeenCalledWith('Coffee')
+    expect(onAddCategory).not.toHaveBeenCalledWith('Food')
   })
 
   it('clicking a budget cell shows the matching transactions below the budget', async () => {
