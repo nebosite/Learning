@@ -44,6 +44,13 @@ export interface BudgetRow {
   category: string
   /** Always length 12, one entry per month of the budget. */
   amounts: number[]
+  /**
+   * Optional yearly budget cap. Only meaningful for Discretionary rows —
+   * Income / Bills rows ignore it. Stored as a positive whole-dollar value;
+   * UI defaults to 0 when missing for backwards compatibility with budgets
+   * saved before this field existed.
+   */
+  budgeted?: number
 }
 
 /** Which group a budget row currently belongs to. */

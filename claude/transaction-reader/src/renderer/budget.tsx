@@ -372,6 +372,35 @@ export function autofillBudget(
   return next
 }
 
+/**
+ * Set the per-row yearly Budgeted cap. Normalizes to a non-negative whole
+ * dollar — the input field rejects letters and negatives, but this also
+ * defends against API/test misuse.
+ */
+export function updateBudgeted(
+  budget: Budget,
+  section: BudgetSection,
+  rowIdx: number,
+  value: number,
+): Budget {
+  const next: Budget = { ...budget, [section]: [...budget[section]] }
+  const rows = next[section]
+  const row = rows[rowIdx]
+  if (!row) return budget
+  const clean = Math.max(0, Math.round(Math.abs(value)))
+  rows[rowIdx] = { ...row, budgeted: clean }
+  return next
+}
+
+/**
+ * Remaining = Budgeted + sum of the row's month cells. Spending records are
+ * stored negative, so the sum is typically negative and remaining shrinks
+ * as the year fills in. Drops below zero once spending exceeds the cap.
+ */
+export function rowRemaining(row: BudgetRow): number {
+  return (row.budgeted ?? 0) + rowTotal(row)
+}
+
 export function updateCell(
   budget: Budget,
   section: BudgetSection,
@@ -449,6 +478,12 @@ export function BudgetView({
     section: BudgetSection
     row: number
     month: number
+  } | null>(null)
+  // Per-row Budgeted editor (Discretionary only). Mutually exclusive with the
+  // month-cell editor — opening one closes the other.
+  const [editingBudgeted, setEditingBudgeted] = useState<{
+    section: BudgetSection
+    row: number
   } | null>(null)
   // Currently-selected month cell — drives the sub-grid below. Editing a cell
   // also selects it, but Escape closes the editor while selection persists.
@@ -636,6 +671,7 @@ export function BudgetView({
           budget={selected}
           drag={drag}
           editing={editing}
+          editingBudgeted={editingBudgeted}
           selectedCell={selectedCell}
           monthlyCategorySums={monthlyCategorySums}
           monthsWithRecords={monthsWithRecords}
@@ -653,11 +689,21 @@ export function BudgetView({
           onStartEdit={(section, row, month) => {
             setSelectedCell({ section, row, month })
             setEditing({ section, row, month })
+            setEditingBudgeted(null)
           }}
           onCancelEdit={() => setEditing(null)}
           onCommitEdit={(section, row, month, value) => {
             applyToSelected((b) => updateCell(b, section, row, month, value))
             setEditing(null)
+          }}
+          onStartEditBudgeted={(section, row) => {
+            setEditingBudgeted({ section, row })
+            setEditing(null)
+          }}
+          onCancelEditBudgeted={() => setEditingBudgeted(null)}
+          onCommitEditBudgeted={(section, row, value) => {
+            applyToSelected((b) => updateBudgeted(b, section, row, value))
+            setEditingBudgeted(null)
           }}
           onDragStart={(section, index) => setDrag({ section, index })}
           onDragEnd={() => setDrag(null)}
@@ -748,6 +794,8 @@ interface BudgetGridProps {
   budget: Budget
   drag: DragSource | null
   editing: { section: BudgetSection; row: number; month: number } | null
+  /** Per-row Budgeted editor target. Only ever set for the discretionary section. */
+  editingBudgeted: { section: BudgetSection; row: number } | null
   selectedCell: { section: BudgetSection; row: number; month: number } | null
   /** Per (category-lower | YYYY-MM) sum + count of non-ignored records. */
   monthlyCategorySums: Map<string, { sum: number; count: number }>
@@ -767,6 +815,13 @@ interface BudgetGridProps {
     month: number,
     value: number,
   ) => void
+  onStartEditBudgeted: (section: BudgetSection, row: number) => void
+  onCancelEditBudgeted: () => void
+  onCommitEditBudgeted: (
+    section: BudgetSection,
+    row: number,
+    value: number,
+  ) => void
   onDragStart: (section: BudgetSection, index: number) => void
   onDragEnd: () => void
   onDrop: (target: { section: BudgetSection; index: number }) => void
@@ -778,6 +833,7 @@ function BudgetGrid({
   budget,
   drag,
   editing,
+  editingBudgeted,
   selectedCell,
   monthlyCategorySums,
   monthsWithRecords,
@@ -790,6 +846,9 @@ function BudgetGrid({
   onStartEdit,
   onCancelEdit,
   onCommitEdit,
+  onStartEditBudgeted,
+  onCancelEditBudgeted,
+  onCommitEditBudgeted,
   onDragStart,
   onDragEnd,
   onDrop,
@@ -797,7 +856,10 @@ function BudgetGrid({
   onDeleteRow,
 }: BudgetGridProps): JSX.Element {
   const months = useMemo(() => monthsForBudget(budget.startMonth), [budget.startMonth])
-  const colSpan = months.length + 2
+  // Category + 12 months + Total + Remaining + Budgeted = 16 columns total.
+  // colSpan is used by section header / spacer / drop-target rows that span
+  // every column.
+  const colSpan = months.length + 4
 
   function allowDrop(e: React.DragEvent): void {
     if (drag) e.preventDefault()
@@ -815,6 +877,8 @@ function BudgetGrid({
               </th>
             ))}
             <th className="budget-total-col">Total</th>
+            <th className="budget-extra-col">Remaining</th>
+            <th className="budget-extra-col">Budgeted</th>
           </tr>
         </thead>
         {SECTIONS.map((sec, si) => {
@@ -943,6 +1007,36 @@ function BudgetGrid({
                   >
                     {formatBudgetAmount(rowTotal(row))}
                   </td>
+                  {sec.id === 'discretionary' ? (
+                    <>
+                      <td
+                        className={`budget-extra-col${
+                          rowRemaining(row) < -1
+                            ? ' budget-remaining-overspent'
+                            : rowRemaining(row) < 0
+                              ? ' budget-cell-negative'
+                              : ''
+                        }`}
+                      >
+                        {formatBudgetAmount(rowRemaining(row))}
+                      </td>
+                      <BudgetedCell
+                        value={row.budgeted ?? 0}
+                        editing={
+                          editingBudgeted?.section === sec.id &&
+                          editingBudgeted.row === ri
+                        }
+                        onStart={() => onStartEditBudgeted(sec.id, ri)}
+                        onCancel={onCancelEditBudgeted}
+                        onCommit={(v) => onCommitEditBudgeted(sec.id, ri, v)}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <td className="budget-extra-col" />
+                      <td className="budget-extra-col" />
+                    </>
+                  )}
                 </tr>
               ))}
               <tr
@@ -966,6 +1060,38 @@ function BudgetGrid({
                 >
                   {formatBudgetAmount(grandTotal)}
                 </td>
+                {sec.id === 'discretionary'
+                  ? (() => {
+                      const budgetedTotal = rows.reduce(
+                        (s, r) => s + (r.budgeted ?? 0),
+                        0,
+                      )
+                      const remainingTotal = budgetedTotal + grandTotal
+                      return (
+                        <>
+                          <td
+                            className={`budget-extra-col${
+                              remainingTotal < -1
+                                ? ' budget-remaining-overspent'
+                                : remainingTotal < 0
+                                  ? ' budget-cell-negative'
+                                  : ''
+                            }`}
+                          >
+                            {formatBudgetAmount(remainingTotal)}
+                          </td>
+                          <td className="budget-extra-col">
+                            {formatBudgetAmount(budgetedTotal)}
+                          </td>
+                        </>
+                      )
+                    })()
+                  : (
+                      <>
+                        <td className="budget-extra-col" />
+                        <td className="budget-extra-col" />
+                      </>
+                    )}
               </tr>
               {si < SECTIONS.length - 1 && (
                 <tr className="budget-spacer" aria-hidden="true">
@@ -1049,6 +1175,82 @@ function BudgetCell({
         ref={inputRef}
         type="number"
         step="0.01"
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            commit()
+          } else if (e.key === 'Escape') {
+            e.preventDefault()
+            onCancel()
+          }
+        }}
+      />
+    </td>
+  )
+}
+
+interface BudgetedCellProps {
+  value: number
+  editing: boolean
+  onStart: () => void
+  onCancel: () => void
+  onCommit: (value: number) => void
+}
+
+/**
+ * Editable yearly-cap cell on Discretionary rows. Accepts positive whole
+ * dollars only — negatives and decimals are normalized on commit.
+ */
+function BudgetedCell({
+  value,
+  editing,
+  onStart,
+  onCancel,
+  onCommit,
+}: BudgetedCellProps): JSX.Element {
+  const [input, setInput] = useState(() => String(value))
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!editing) return
+    setInput(String(value))
+    inputRef.current?.focus()
+    inputRef.current?.select()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing])
+
+  if (!editing) {
+    return (
+      <td className="budget-extra-col budget-budgeted-cell" onClick={onStart}>
+        {formatBudgetAmount(value)}
+      </td>
+    )
+  }
+
+  function commit(): void {
+    const trimmed = input.trim()
+    if (trimmed === '') {
+      onCancel()
+      return
+    }
+    const n = Number(trimmed)
+    if (Number.isNaN(n)) {
+      onCancel()
+      return
+    }
+    onCommit(Math.max(0, Math.round(Math.abs(n))))
+  }
+
+  return (
+    <td className="budget-extra-col budget-cell-editing">
+      <input
+        ref={inputRef}
+        type="number"
+        step="1"
+        min="0"
         value={input}
         onChange={(e) => setInput(e.target.value)}
         onBlur={commit}

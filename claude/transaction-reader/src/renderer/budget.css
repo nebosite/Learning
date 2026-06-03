@@ -152,6 +152,29 @@
   font-weight: 600;
 }
 
+/* Extra Discretionary-only columns (Remaining, Budgeted). The Income and
+   Bills sections leave these cells blank so the month columns stay aligned
+   across all three sections. */
+.budget-extra-col {
+  width: 96px;
+  text-align: right;
+  font-weight: 600;
+}
+
+.budget-budgeted-cell {
+  cursor: text;
+  font-weight: 400;
+}
+
+/* Overspent Remaining (< -$1): red fill with bold yellow text. Overrides the
+   .budget-cell-negative color rule via specificity (this class wins because
+   it's applied alongside on the same element). */
+.budget-extra-col.budget-remaining-overspent {
+  background: #c00;
+  color: #ff0;
+  font-weight: 700;
+}
+
 .budget-row th.budget-cat-col {
   background: #fafafa;
   cursor: grab;

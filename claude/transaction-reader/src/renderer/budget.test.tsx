@@ -14,10 +14,12 @@ import {
   moveRow,
   recordsForBudgetCell,
   renameCategoryInBudget,
+  rowRemaining,
   rowTotal,
   sectionGrandTotal,
   sectionMonthlyTotals,
   statusFromSum,
+  updateBudgeted,
   updateCell,
 } from './budget'
 
@@ -235,6 +237,64 @@ describe('renameCategoryInBudget', () => {
     const b = makeBudget({ discretionary: [makeRow('Books')] })
     const next = renameCategoryInBudget(b, 'Food', 'Eating')
     expect(next.discretionary).toEqual([{ category: 'Books', amounts: new Array(12).fill(0) }])
+  })
+})
+
+describe('updateBudgeted', () => {
+  it('sets the per-row Budgeted cap', () => {
+    const b = makeBudget({ discretionary: [makeRow('Food'), makeRow('Gas')] })
+    const next = updateBudgeted(b, 'discretionary', 0, 1200)
+    expect(next.discretionary[0].budgeted).toBe(1200)
+    expect(next.discretionary[1].budgeted).toBeUndefined()
+  })
+
+  it('normalizes negatives and decimals to non-negative whole dollars', () => {
+    const b = makeBudget({ discretionary: [makeRow('Food')] })
+    expect(updateBudgeted(b, 'discretionary', 0, -42.7).discretionary[0].budgeted).toBe(43)
+    expect(updateBudgeted(b, 'discretionary', 0, 100.4).discretionary[0].budgeted).toBe(100)
+    expect(updateBudgeted(b, 'discretionary', 0, -0.2).discretionary[0].budgeted).toBe(0)
+  })
+
+  it('returns the input budget unchanged when the row index is out of range', () => {
+    const b = makeBudget({ discretionary: [makeRow('Food')] })
+    expect(updateBudgeted(b, 'discretionary', 5, 500)).toBe(b)
+  })
+
+  it('does not mutate the input budget', () => {
+    const b = makeBudget({ discretionary: [makeRow('Food')] })
+    const before = JSON.parse(JSON.stringify(b))
+    updateBudgeted(b, 'discretionary', 0, 1000)
+    expect(b).toEqual(before)
+  })
+})
+
+describe('rowRemaining', () => {
+  it('returns budgeted plus the sum of all 12 month cells', () => {
+    const row: BudgetRow = {
+      category: 'Food',
+      amounts: [-100, -100, -100, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      budgeted: 1000,
+    }
+    // 1000 + (-300) = 700.
+    expect(rowRemaining(row)).toBe(700)
+  })
+
+  it('goes negative when spending exceeds budget', () => {
+    const row: BudgetRow = {
+      category: 'Food',
+      amounts: [-600, -600, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      budgeted: 1000,
+    }
+    // 1000 + (-1200) = -200.
+    expect(rowRemaining(row)).toBe(-200)
+  })
+
+  it('treats missing budgeted as 0', () => {
+    const row: BudgetRow = {
+      category: 'Food',
+      amounts: [-50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    }
+    expect(rowRemaining(row)).toBe(-50)
   })
 })
 
@@ -743,6 +803,40 @@ describe('BudgetView', () => {
     const updated = current[0]
     expect(updated.discretionary).toEqual([])
     expect(updated.bills.map((r) => r.category)).toEqual(['Rent', 'Food'])
+  })
+
+  it('renders Remaining and Budgeted columns; flags overspent rows with the alert class', () => {
+    const b: Budget = {
+      name: 'B',
+      startMonth: '2026-01',
+      income: [],
+      bills: [],
+      discretionary: [
+        {
+          category: 'Coffee',
+          // -1200 total spend; budgeted 1000 → remaining = -200 (< -1 → alert).
+          amounts: [-600, -600, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+          budgeted: 1000,
+        },
+      ],
+    }
+    const { container } = render(
+      <BudgetView
+        budgets={[b]}
+        availableCategories={[]}
+        onChange={vi.fn()}
+        onAddCategory={vi.fn()}
+        {...subGridDefaults}
+      />,
+    )
+
+    expect(screen.getByText('Remaining')).toBeInTheDocument()
+    expect(screen.getByText('Budgeted')).toBeInTheDocument()
+
+    // The Coffee row's Remaining cell should carry the overspent class.
+    const overspent = container.querySelector('.budget-remaining-overspent')
+    expect(overspent).not.toBeNull()
+    expect(overspent?.textContent).toBe('-$200')
   })
 
   it("clicking Autofill fills zero cells and registers brand-new categories with onAddCategory", async () => {
