@@ -7,6 +7,7 @@ import {
   BudgetView,
   addMonths,
   autofillBudget,
+  budgetBottomLine,
   budgetCellStatus,
   deleteRow,
   formatBudgetAmount,
@@ -265,6 +266,61 @@ describe('updateBudgeted', () => {
     const before = JSON.parse(JSON.stringify(b))
     updateBudgeted(b, 'discretionary', 0, 1000)
     expect(b).toEqual(before)
+  })
+})
+
+describe('budgetBottomLine', () => {
+  it('returns 0 for an empty budget', () => {
+    expect(budgetBottomLine(makeBudget())).toBe(0)
+  })
+
+  it('sums month cells across all three sections', () => {
+    const b = makeBudget({
+      income: [makeRow('Salary', new Array(12).fill(5000))], // +60000
+      bills: [makeRow('Rent', new Array(12).fill(-1500))], // -18000
+      discretionary: [makeRow('Food', new Array(12).fill(-200))], // -2400
+    })
+    // No budgeted caps → no positive Remaining contributions; Food's
+    // remaining is -2400 (< 0) so excluded.
+    expect(budgetBottomLine(b)).toBe(60000 - 18000 - 2400)
+  })
+
+  it('subtracts Discretionary Remaining when above zero, ignores negative Remaining', () => {
+    const b = makeBudget({
+      discretionary: [
+        {
+          // -300 month total + 1000 budgeted → remaining 700 (subtracted).
+          category: 'Food',
+          amounts: [-100, -100, -100, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+          budgeted: 1000,
+        },
+        {
+          // -1200 + 1000 → remaining -200 (NOT subtracted again — the months
+          // already pulled it down).
+          category: 'Coffee',
+          amounts: [-600, -600, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+          budgeted: 1000,
+        },
+      ],
+    })
+    // sum months: -300 + -1200 = -1500. Subtract Food's positive remaining
+    // (700) — Coffee's negative remaining is ignored. Total: -2200.
+    expect(budgetBottomLine(b)).toBe(-2200)
+  })
+
+  it('does not count positive Remaining outside Discretionary (no Budgeted on Income/Bills)', () => {
+    // Even if a Bills row carried budgeted, the helper only adds positive
+    // Remaining from Discretionary. Guards against later schema slip-ups.
+    const b = makeBudget({
+      bills: [
+        {
+          category: 'Rent',
+          amounts: new Array(12).fill(0),
+          budgeted: 1000,
+        },
+      ],
+    })
+    expect(budgetBottomLine(b)).toBe(0)
   })
 })
 
@@ -803,6 +859,105 @@ describe('BudgetView', () => {
     const updated = current[0]
     expect(updated.discretionary).toEqual([])
     expect(updated.bills.map((r) => r.category)).toEqual(['Rent', 'Food'])
+  })
+
+  it('renders the Bottom line bar with the budgetBottomLine value', () => {
+    const b: Budget = {
+      name: 'B',
+      startMonth: '2026-01',
+      income: [makeRow('Salary', new Array(12).fill(1000))], // +12000
+      bills: [makeRow('Rent', new Array(12).fill(-500))], // -6000
+      discretionary: [
+        {
+          category: 'Food',
+          amounts: [-100, -100, -100, 0, 0, 0, 0, 0, 0, 0, 0, 0], // -300
+          budgeted: 500, // remaining 200 (positive → counted)
+        },
+      ],
+    }
+    const { container } = render(
+      <BudgetView
+        budgets={[b]}
+        availableCategories={[]}
+        onChange={vi.fn()}
+        onAddCategory={vi.fn()}
+        {...subGridDefaults}
+      />,
+    )
+    // sum months: 12000 - 6000 - 300 = 5700. Subtract Food's positive
+    // remaining (200) → 5500.
+    const bar = container.querySelector('.budget-bottom-line') as HTMLElement
+    expect(bar).not.toBeNull()
+    expect(bar.textContent).toContain('Bottom line')
+    expect(bar.textContent).toContain('$5500')
+  })
+
+  it('bolds non-zero Remaining cells via the budget-remaining-bold class', () => {
+    const b: Budget = {
+      name: 'B',
+      startMonth: '2026-01',
+      income: [],
+      bills: [],
+      discretionary: [
+        // remaining = 500 + 0 = 500 (non-zero → bold)
+        {
+          category: 'Food',
+          amounts: new Array<number>(12).fill(0),
+          budgeted: 500,
+        },
+        // remaining = 0 + 0 = 0 (zero → NOT bold)
+        { category: 'Idle', amounts: new Array<number>(12).fill(0) },
+      ],
+    }
+    const { container } = render(
+      <BudgetView
+        budgets={[b]}
+        availableCategories={[]}
+        onChange={vi.fn()}
+        onAddCategory={vi.fn()}
+        {...subGridDefaults}
+      />,
+    )
+    const remainingCells = container.querySelectorAll('.budget-remaining-cell')
+    // Per-row (×2) + section totals row = 3 Remaining cells.
+    expect(remainingCells.length).toBe(3)
+    // Food's row: bold. Idle's row: not bold.
+    const boldCells = container.querySelectorAll(
+      '.budget-remaining-cell.budget-remaining-bold',
+    )
+    // Food row + section total (500) bold; Idle row (0) is not.
+    expect(boldCells.length).toBe(2)
+  })
+
+  it('flags Remaining > Budgeted rows with the surplus class', () => {
+    // +400 in net positive month cells with a 1000 budgeted → remaining 1400,
+    // which is greater than the 1000 budgeted (e.g. refunds outweighed
+    // spending). Expect green-bg / white-bold via the surplus class.
+    const b: Budget = {
+      name: 'B',
+      startMonth: '2026-01',
+      income: [],
+      bills: [],
+      discretionary: [
+        {
+          category: 'Refunds',
+          amounts: [400, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+          budgeted: 1000,
+        },
+      ],
+    }
+    const { container } = render(
+      <BudgetView
+        budgets={[b]}
+        availableCategories={[]}
+        onChange={vi.fn()}
+        onAddCategory={vi.fn()}
+        {...subGridDefaults}
+      />,
+    )
+    const surplus = container.querySelector('.budget-remaining-surplus')
+    expect(surplus).not.toBeNull()
+    expect(surplus?.textContent).toBe('$1400')
   })
 
   it('renders Remaining and Budgeted columns; flags overspent rows with the alert class', () => {

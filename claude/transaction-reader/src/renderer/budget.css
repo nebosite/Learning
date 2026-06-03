@@ -34,6 +34,36 @@
   font-size: 12px;
 }
 
+/* "Bottom line" projection strip between the toolbar and the budget table.
+   Label and value sit adjacent at the left edge (unlike the bottom
+   transactions strip, which pushes them to opposite ends). */
+.budget-bottom-line {
+  flex: 0 0 40px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  margin-bottom: 10px;
+  background: #ededed;
+  border: 1px solid #ccc;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.budget-bottom-line-label {
+  color: #444;
+  font-weight: 600;
+}
+
+.budget-bottom-line-value {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.budget-bottom-line-value.amount-negative {
+  color: #c00;
+}
+
 .budget-empty {
   margin: 0;
   padding: 12px;
@@ -127,8 +157,11 @@
   text-overflow: ellipsis;
 }
 
+/* Column-header row sits one step darker than the section-header light blue
+   (#dbeafe) so it reads as the table's outermost frame. */
 .budget-table thead th {
-  background: #f5f5f5;
+  background: #bfdbfe;
+  color: #1e3a8a;
   font-weight: 600;
   text-align: right;
   position: sticky;
@@ -136,10 +169,13 @@
   z-index: 1;
 }
 
+/* Category and Total columns get the section-header light blue across every
+   row (body + section totals). The thead rule above wins by row scope. */
 .budget-cat-col {
   width: 200px;
   text-align: left !important;
   font-weight: 600;
+  background: #dbeafe;
 }
 
 .budget-month-col {
@@ -150,6 +186,7 @@
   width: 96px;
   text-align: right;
   font-weight: 600;
+  background: #dbeafe;
 }
 
 /* Extra Discretionary-only columns (Remaining, Budgeted). The Income and
@@ -158,12 +195,16 @@
 .budget-extra-col {
   width: 96px;
   text-align: right;
-  font-weight: 600;
 }
 
 .budget-budgeted-cell {
   cursor: text;
-  font-weight: 400;
+}
+
+/* Non-zero Remaining values render bold; zero values stay regular weight so
+   the row reads quietly until there's something interesting to flag. */
+.budget-remaining-cell.budget-remaining-bold {
+  font-weight: 700;
 }
 
 /* Overspent Remaining (< -$1): red fill with bold yellow text. Overrides the
@@ -175,8 +216,16 @@
   font-weight: 700;
 }
 
+/* Surplus Remaining (> Budgeted — typically from refunds outweighing
+   spending): green fill with bold white text. Wins over the default look
+   and over budget-remaining-bold via specificity. */
+.budget-extra-col.budget-remaining-surplus {
+  background: #1a7f37;
+  color: #fff;
+  font-weight: 700;
+}
+
 .budget-row th.budget-cat-col {
-  background: #fafafa;
   cursor: grab;
 }
 
@@ -185,7 +234,7 @@
 }
 
 .budget-row[draggable='true']:hover th.budget-cat-col {
-  background: #eef4ff;
+  background: #bfdbfe;
 }
 
 /* Category name + two small "send to other section" buttons in the row head. */
@@ -385,6 +434,13 @@
 
 .budget-section-totals td {
   text-align: right;
+}
+
+/* Keep the cat-col and total-col cells of the section totals row aligned
+   with the column color scheme (light blue) instead of the row's gray fill. */
+.budget-section-totals th.budget-cat-col,
+.budget-section-totals td.budget-total-col {
+  background: #dbeafe;
 }
 
 /* Spacer row between sections. */

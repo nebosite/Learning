@@ -401,6 +401,28 @@ export function rowRemaining(row: BudgetRow): number {
   return (row.budgeted ?? 0) + rowTotal(row)
 }
 
+/**
+ * "Bottom Line" projection shown above the budget grid: the sum of every
+ * monthly budget cell across all three sections, then minus the positive
+ * Remaining values from Discretionary rows (treat the still-unspent
+ * portion of the cap as if the user will spend it before year-end).
+ * Negative Remainings (already overspent) are ignored here — the
+ * month-cell total has already captured that spending.
+ */
+export function budgetBottomLine(budget: Budget): number {
+  let sum = 0
+  for (const sec of ['income', 'bills', 'discretionary'] as const) {
+    for (const row of budget[sec]) {
+      for (const a of row.amounts) sum += a
+    }
+  }
+  for (const row of budget.discretionary) {
+    const r = rowRemaining(row)
+    if (r > 0) sum -= r
+  }
+  return sum
+}
+
 export function updateCell(
   budget: Budget,
   section: BudgetSection,
@@ -664,6 +686,17 @@ export function BudgetView({
             {formatMonth(addMonths(selected.startMonth, 11))}
           </span>
         )}
+      </div>
+
+      <div className="budget-bottom-line">
+        <span className="budget-bottom-line-label">Bottom line</span>
+        <span
+          className={`budget-bottom-line-value${
+            selected && budgetBottomLine(selected) < 0 ? ' amount-negative' : ''
+          }`}
+        >
+          {selected ? formatBudgetAmount(budgetBottomLine(selected)) : ''}
+        </span>
       </div>
 
       {selected ? (
@@ -1010,12 +1043,16 @@ function BudgetGrid({
                   {sec.id === 'discretionary' ? (
                     <>
                       <td
-                        className={`budget-extra-col${
+                        className={`budget-extra-col budget-remaining-cell${
                           rowRemaining(row) < -1
                             ? ' budget-remaining-overspent'
-                            : rowRemaining(row) < 0
-                              ? ' budget-cell-negative'
-                              : ''
+                            : rowRemaining(row) > (row.budgeted ?? 0)
+                              ? ' budget-remaining-surplus'
+                              : rowRemaining(row) < 0
+                                ? ' budget-cell-negative'
+                                : ''
+                        }${
+                          rowRemaining(row) !== 0 ? ' budget-remaining-bold' : ''
                         }`}
                       >
                         {formatBudgetAmount(rowRemaining(row))}
@@ -1070,12 +1107,16 @@ function BudgetGrid({
                       return (
                         <>
                           <td
-                            className={`budget-extra-col${
+                            className={`budget-extra-col budget-remaining-cell${
                               remainingTotal < -1
                                 ? ' budget-remaining-overspent'
-                                : remainingTotal < 0
-                                  ? ' budget-cell-negative'
-                                  : ''
+                                : remainingTotal > budgetedTotal
+                                  ? ' budget-remaining-surplus'
+                                  : remainingTotal < 0
+                                    ? ' budget-cell-negative'
+                                    : ''
+                            }${
+                              remainingTotal !== 0 ? ' budget-remaining-bold' : ''
                             }`}
                           >
                             {formatBudgetAmount(remainingTotal)}
