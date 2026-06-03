@@ -423,6 +423,48 @@ export function budgetBottomLine(budget: Budget): number {
   return sum
 }
 
+/**
+ * Horizontal drag-copy state for the budget grid. The drag is constrained
+ * to a single row; only the target month index changes as the cursor moves.
+ */
+export interface BudgetFillDrag {
+  section: BudgetSection
+  row: number
+  sourceMonth: number
+  currentMonth: number
+}
+
+/**
+ * Copy the source month's value into every month between source and target
+ * (inclusive of the range, exclusive of the source itself, since it already
+ * holds the value). No-op when the source and target are the same month.
+ */
+export function fillRowRange(
+  budget: Budget,
+  section: BudgetSection,
+  rowIdx: number,
+  sourceMonth: number,
+  targetMonth: number,
+): Budget {
+  if (sourceMonth === targetMonth) return budget
+  const row = budget[section][rowIdx]
+  if (!row) return budget
+  const lo = Math.min(sourceMonth, targetMonth)
+  const hi = Math.max(sourceMonth, targetMonth)
+  const value = row.amounts[sourceMonth] ?? 0
+  const amounts = row.amounts.slice()
+  for (let m = lo; m <= hi; m++) {
+    if (m === sourceMonth) continue
+    amounts[m] = value
+  }
+  return {
+    ...budget,
+    [section]: budget[section].map((r, i) =>
+      i === rowIdx ? { ...r, amounts } : r,
+    ),
+  }
+}
+
 export function updateCell(
   budget: Budget,
   section: BudgetSection,
@@ -507,6 +549,11 @@ export function BudgetView({
     section: BudgetSection
     row: number
   } | null>(null)
+  // Horizontal drag-copy state. Constrained to a single row — only the
+  // target month index moves as the cursor sweeps left/right.
+  const [fillDrag, setFillDrag] = useState<BudgetFillDrag | null>(null)
+  const fillDragRef = useRef<BudgetFillDrag | null>(null)
+  fillDragRef.current = fillDrag
   // Currently-selected month cell — drives the sub-grid below. Editing a cell
   // also selects it, but Escape closes the editor while selection persists.
   const [selectedCell, setSelectedCell] = useState<{
@@ -529,6 +576,63 @@ export function BudgetView({
     if (!selected) return
     onChange(budgets.map((b) => (b.name === selected.name ? updater(b) : b)))
   }
+  // Stable handle for the drag-copy mouseup handler, which is bound once per
+  // drag and shouldn't re-subscribe every render.
+  const applyToSelectedRef = useRef(applyToSelected)
+  applyToSelectedRef.current = applyToSelected
+
+  function startFillDrag(
+    section: BudgetSection,
+    row: number,
+    month: number,
+  ): void {
+    // Drag-copy and the in-cell editor are mutually exclusive.
+    setEditing(null)
+    setEditingBudgeted(null)
+    setFillDrag({ section, row, sourceMonth: month, currentMonth: month })
+  }
+
+  // While a drag is active, track the cursor with elementFromPoint to find the
+  // hovered cell (constrained to the source's row) and resolve to a copy on
+  // mouseup.
+  useEffect(() => {
+    if (!fillDrag) return
+    function onMouseMove(e: MouseEvent): void {
+      const d = fillDragRef.current
+      if (!d) return
+      const el = document.elementFromPoint(e.clientX, e.clientY)
+      const td = (
+        el instanceof Element ? el : null
+      )?.closest('[data-budget-month]') as HTMLElement | null
+      if (!td) return
+      const section = td.dataset.budgetSection as BudgetSection | undefined
+      const rowAttr = td.dataset.budgetRow
+      const monthAttr = td.dataset.budgetMonth
+      if (!section || rowAttr === undefined || monthAttr === undefined) return
+      const row = Number(rowAttr)
+      const month = Number(monthAttr)
+      if (Number.isNaN(row) || Number.isNaN(month)) return
+      if (section !== d.section || row !== d.row) return
+      if (month === d.currentMonth) return
+      setFillDrag({ ...d, currentMonth: month })
+    }
+    function onMouseUp(): void {
+      const d = fillDragRef.current
+      setFillDrag(null)
+      if (!d || d.sourceMonth === d.currentMonth) return
+      applyToSelectedRef.current((b) =>
+        fillRowRange(b, d.section, d.row, d.sourceMonth, d.currentMonth),
+      )
+    }
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+    // Re-bind only when a drag starts or ends — not while the cursor moves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fillDrag !== null])
 
   // Pre-aggregate non-ignored records by (category-lower | YYYY-MM) so the
   // per-cell status lookup during render is O(1). Also tracks which months
@@ -706,6 +810,8 @@ export function BudgetView({
           editing={editing}
           editingBudgeted={editingBudgeted}
           selectedCell={selectedCell}
+          fillDrag={fillDrag}
+          onStartFill={startFillDrag}
           monthlyCategorySums={monthlyCategorySums}
           monthsWithRecords={monthsWithRecords}
           addingSection={addingSection}
@@ -830,6 +936,10 @@ interface BudgetGridProps {
   /** Per-row Budgeted editor target. Only ever set for the discretionary section. */
   editingBudgeted: { section: BudgetSection; row: number } | null
   selectedCell: { section: BudgetSection; row: number; month: number } | null
+  /** Active horizontal drag-copy, or null when nothing is being dragged. */
+  fillDrag: BudgetFillDrag | null
+  /** Called when the user mousedowns on a cell's fill handle. */
+  onStartFill: (section: BudgetSection, row: number, month: number) => void
   /** Per (category-lower | YYYY-MM) sum + count of non-ignored records. */
   monthlyCategorySums: Map<string, { sum: number; count: number }>
   /** YYYY-MM months that have at least one non-ignored record (any category). */
@@ -868,6 +978,8 @@ function BudgetGrid({
   editing,
   editingBudgeted,
   selectedCell,
+  fillDrag,
+  onStartFill,
   monthlyCategorySums,
   monthsWithRecords,
   addingSection,
@@ -899,7 +1011,9 @@ function BudgetGrid({
   }
 
   return (
-    <div className="budget-table-wrap">
+    <div
+      className={`budget-table-wrap${fillDrag ? ' budget-dragging' : ''}`}
+    >
       <table className="budget-table">
         <thead>
           <tr>
@@ -1011,9 +1125,18 @@ function BudgetGrid({
                             row.amounts[mi] ?? 0,
                             monthsWithRecords.has(m),
                           )
+                    const inFillRange =
+                      fillDrag !== null &&
+                      fillDrag.section === sec.id &&
+                      fillDrag.row === ri &&
+                      mi >= Math.min(fillDrag.sourceMonth, fillDrag.currentMonth) &&
+                      mi <= Math.max(fillDrag.sourceMonth, fillDrag.currentMonth)
                     return (
                       <BudgetCell
                         key={mi}
+                        section={sec.id}
+                        rowIndex={ri}
+                        monthIndex={mi}
                         value={row.amounts[mi] ?? 0}
                         status={status}
                         editing={
@@ -1026,10 +1149,12 @@ function BudgetGrid({
                           selectedCell.row === ri &&
                           selectedCell.month === mi
                         }
+                        inFillRange={inFillRange}
                         onSelect={() => onSelectCell(sec.id, ri, mi)}
                         onStart={() => onStartEdit(sec.id, ri, mi)}
                         onCancel={onCancelEdit}
                         onCommit={(v) => onCommitEdit(sec.id, ri, mi, v)}
+                        onFillStart={() => onStartFill(sec.id, ri, mi)}
                       />
                     )
                   })}
@@ -1148,25 +1273,38 @@ function BudgetGrid({
 }
 
 interface BudgetCellProps {
+  /** Section the cell lives in — emitted as a data attribute for hit-testing. */
+  section: BudgetSection
+  rowIndex: number
+  monthIndex: number
   value: number
   status: CellStatus
   editing: boolean
   selected: boolean
+  /** True when an active drag-copy's span covers this cell. */
+  inFillRange: boolean
   onSelect: () => void
   onStart: () => void
   onCancel: () => void
   onCommit: (value: number) => void
+  /** Begin a horizontal drag-copy from this cell. */
+  onFillStart: () => void
 }
 
 function BudgetCell({
+  section,
+  rowIndex,
+  monthIndex,
   value,
   status,
   editing,
   selected,
+  inFillRange,
   onSelect,
   onStart,
   onCancel,
   onCommit,
+  onFillStart,
 }: BudgetCellProps): JSX.Element {
   const [input, setInput] = useState(() => String(value))
   const inputRef = useRef<HTMLInputElement>(null)
@@ -1183,15 +1321,30 @@ function BudgetCell({
   if (!editing) {
     const statusClass = status === 'empty' ? '' : ` budget-cell-${status}`
     const negativeClass = value < 0 ? ' budget-cell-negative' : ''
+    const fillClass = inFillRange ? ' budget-cell-fill-target' : ''
+    const selectedClass = selected ? ' budget-cell-selected' : ''
     return (
       <td
-        className={`budget-cell${statusClass}${negativeClass}${selected ? ' budget-cell-selected' : ''}`}
+        className={`budget-cell${statusClass}${negativeClass}${fillClass}${selectedClass}`}
+        data-budget-section={section}
+        data-budget-row={rowIndex}
+        data-budget-month={monthIndex}
         onClick={() => {
           onSelect()
           onStart()
         }}
       >
         {formatBudgetAmount(value)}
+        <span
+          className="budget-fill-handle"
+          aria-hidden="true"
+          onMouseDown={(e) => {
+            e.stopPropagation()
+            e.preventDefault()
+            onFillStart()
+          }}
+          onClick={(e) => e.stopPropagation()}
+        />
       </td>
     )
   }

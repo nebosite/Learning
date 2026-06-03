@@ -301,6 +301,36 @@
 .budget-cell {
   text-align: right;
   cursor: text;
+  position: relative;
+}
+
+/* Cells spanned by an in-progress horizontal drag-copy. Same blue inset as
+   the grid's vertical drag, so the gesture reads the same way visually. */
+.budget-cell-fill-target {
+  box-shadow: inset 0 0 0 2px #93c5fd;
+}
+
+/* Small blue square in the cell's lower-right corner that begins a
+   drag-copy. Hidden at rest, revealed on hover. ew-resize cursor since the
+   budget drag is horizontal-only (vs the grid's ns-resize vertical drag). */
+.budget-fill-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 7px;
+  height: 7px;
+  background: #2563eb;
+  cursor: ew-resize;
+  display: none;
+}
+
+.budget-cell:hover .budget-fill-handle {
+  display: block;
+}
+
+/* Suppress text selection while a drag-copy is in flight. */
+.budget-dragging {
+  user-select: none;
 }
 
 /* Negative numeric values (any cell, row total, section total) — red text. */

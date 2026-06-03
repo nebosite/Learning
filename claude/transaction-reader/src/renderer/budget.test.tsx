@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { Budget, BudgetRow, TransactionRecord } from '../shared/types'
 import { canonicalRecordKey } from '../shared/records'
@@ -10,6 +10,7 @@ import {
   budgetBottomLine,
   budgetCellStatus,
   deleteRow,
+  fillRowRange,
   formatBudgetAmount,
   monthsForBudget,
   moveRow,
@@ -351,6 +352,63 @@ describe('rowRemaining', () => {
       amounts: [-50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     }
     expect(rowRemaining(row)).toBe(-50)
+  })
+})
+
+describe('fillRowRange', () => {
+  it('copies the source month value into every cell between source and target (exclusive of source)', () => {
+    const b = makeBudget({
+      discretionary: [makeRow('Food', [50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])],
+    })
+    const next = fillRowRange(b, 'discretionary', 0, 0, 3)
+    expect(next.discretionary[0].amounts).toEqual([
+      50, 50, 50, 50, 0, 0, 0, 0, 0, 0, 0, 0,
+    ])
+  })
+
+  it('works when dragging backwards (target < source)', () => {
+    const b = makeBudget({
+      discretionary: [makeRow('Food', [0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0])],
+    })
+    const next = fillRowRange(b, 'discretionary', 0, 7, 4)
+    expect(next.discretionary[0].amounts).toEqual([
+      0, 0, 0, 0, 7, 7, 7, 7, 0, 0, 0, 0,
+    ])
+  })
+
+  it('overwrites existing non-zero target cells', () => {
+    const b = makeBudget({
+      discretionary: [makeRow('Food', [10, 99, 99, 0, 0, 0, 0, 0, 0, 0, 0, 0])],
+    })
+    const next = fillRowRange(b, 'discretionary', 0, 0, 2)
+    expect(next.discretionary[0].amounts.slice(0, 3)).toEqual([10, 10, 10])
+  })
+
+  it('no-ops when source and target are the same month', () => {
+    const b = makeBudget({
+      discretionary: [makeRow('Food', [5, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0])],
+    })
+    expect(fillRowRange(b, 'discretionary', 0, 1, 1)).toBe(b)
+  })
+
+  it('does not mutate the input budget', () => {
+    const b = makeBudget({
+      discretionary: [makeRow('Food', [5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])],
+    })
+    const before = JSON.parse(JSON.stringify(b))
+    fillRowRange(b, 'discretionary', 0, 0, 5)
+    expect(b).toEqual(before)
+  })
+
+  it('leaves other rows untouched', () => {
+    const b = makeBudget({
+      discretionary: [
+        makeRow('Food', [9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+        makeRow('Gas', [3, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0]),
+      ],
+    })
+    const next = fillRowRange(b, 'discretionary', 0, 0, 3)
+    expect(next.discretionary[1].amounts).toEqual(b.discretionary[1].amounts)
   })
 })
 
@@ -927,6 +985,63 @@ describe('BudgetView', () => {
     )
     // Food row + section total (500) bold; Idle row (0) is not.
     expect(boldCells.length).toBe(2)
+  })
+
+  it('drag-copying a month cell horizontally fills the spanned cells with the source value', async () => {
+    const b: Budget = {
+      name: 'B',
+      startMonth: '2026-01',
+      income: [],
+      bills: [],
+      discretionary: [makeRow('Food', [50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])],
+    }
+    let current = [b]
+    const onChange = vi.fn<(next: Budget[]) => void>((next) => {
+      current = next
+    })
+
+    const { container } = render(
+      <BudgetView
+        budgets={current}
+        availableCategories={[]}
+        onChange={onChange}
+        onAddCategory={vi.fn()}
+        {...subGridDefaults}
+      />,
+    )
+
+    // Find the source (month 0) and target (month 3) cells via data attrs.
+    const sourceCell = container.querySelector(
+      '[data-budget-section="discretionary"][data-budget-row="0"][data-budget-month="0"]',
+    ) as HTMLElement
+    const targetCell = container.querySelector(
+      '[data-budget-section="discretionary"][data-budget-row="0"][data-budget-month="3"]',
+    ) as HTMLElement
+    expect(sourceCell).not.toBeNull()
+    expect(targetCell).not.toBeNull()
+
+    // elementFromPoint is what the drag logic uses to map cursor → cell; jsdom
+    // doesn't supply one, so stub it to return the target cell while the test
+    // "moves" the cursor.
+    const originalElementFromPoint = document.elementFromPoint
+    document.elementFromPoint = (() => targetCell) as typeof document.elementFromPoint
+
+    // fireEvent wraps in act(), so each dispatch is followed by an effect
+    // flush — the window mousemove/mouseup listeners are wired up between
+    // calls instead of all firing before the effect runs.
+    const handle = sourceCell.querySelector(
+      '.budget-fill-handle',
+    ) as HTMLElement
+    fireEvent.mouseDown(handle)
+    fireEvent.mouseMove(window, { clientX: 0, clientY: 0 })
+    fireEvent.mouseUp(window)
+
+    document.elementFromPoint = originalElementFromPoint
+
+    expect(onChange).toHaveBeenCalled()
+    expect(current[0].discretionary[0].amounts).toEqual([
+      50, 50, 50, 50, 0, 0, 0, 0, 0, 0, 0, 0,
+    ])
   })
 
   it('flags Remaining > Budgeted rows with the surplus class', () => {
