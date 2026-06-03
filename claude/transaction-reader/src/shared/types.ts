@@ -51,6 +51,13 @@ export interface BudgetRow {
    * saved before this field existed.
    */
   budgeted?: number
+  /**
+   * Optional per-month free-text notes. Parallel to `amounts` (length 12).
+   * Absent or `''` entries mean "no comment". The field itself is omitted
+   * once every month is empty, so legacy budgets and never-commented rows
+   * carry no extra payload on disk.
+   */
+  comments?: string[]
 }
 
 /** Which group a budget row currently belongs to. */

@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { Budget, BudgetRow, TransactionRecord } from '../shared/types'
 import { canonicalRecordKey } from '../shared/records'
@@ -23,6 +24,7 @@ import {
   statusFromSum,
   updateBudgeted,
   updateCell,
+  updateCellComment,
 } from './budget'
 
 function makeRow(category: string, amounts: number[] = new Array(12).fill(0)): BudgetRow {
@@ -352,6 +354,70 @@ describe('rowRemaining', () => {
       amounts: [-50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     }
     expect(rowRemaining(row)).toBe(-50)
+  })
+})
+
+describe('updateCellComment', () => {
+  it('sets a comment on the targeted cell and leaves siblings empty', () => {
+    const b = makeBudget({ discretionary: [makeRow('Food')] })
+    const next = updateCellComment(b, 'discretionary', 0, 2, 'Holidays')
+    expect(next.discretionary[0].comments).toEqual([
+      '', '', 'Holidays', '', '', '', '', '', '', '', '', '',
+    ])
+  })
+
+  it('clears the field entirely once every month is empty', () => {
+    const b = makeBudget({
+      discretionary: [
+        {
+          category: 'Food',
+          amounts: new Array<number>(12).fill(0),
+          comments: ['', '', 'Holidays', '', '', '', '', '', '', '', '', ''],
+        },
+      ],
+    })
+    const cleared = updateCellComment(b, 'discretionary', 0, 2, '')
+    expect(cleared.discretionary[0].comments).toBeUndefined()
+  })
+
+  it('keeps other months untouched when overwriting', () => {
+    const b = makeBudget({
+      discretionary: [
+        {
+          category: 'Food',
+          amounts: new Array<number>(12).fill(0),
+          comments: ['Jan-note', '', '', '', '', '', '', '', '', '', '', ''],
+        },
+      ],
+    })
+    const next = updateCellComment(b, 'discretionary', 0, 5, 'Jun-note')
+    expect(next.discretionary[0].comments?.[0]).toBe('Jan-note')
+    expect(next.discretionary[0].comments?.[5]).toBe('Jun-note')
+  })
+
+  it('returns the input budget unchanged when the value is the same', () => {
+    const b = makeBudget({
+      discretionary: [
+        {
+          category: 'Food',
+          amounts: new Array<number>(12).fill(0),
+          comments: ['existing', '', '', '', '', '', '', '', '', '', '', ''],
+        },
+      ],
+    })
+    expect(updateCellComment(b, 'discretionary', 0, 0, 'existing')).toBe(b)
+  })
+
+  it('returns the input budget unchanged when the row is out of range', () => {
+    const b = makeBudget({ discretionary: [makeRow('Food')] })
+    expect(updateCellComment(b, 'discretionary', 5, 0, 'x')).toBe(b)
+  })
+
+  it('does not mutate the input budget', () => {
+    const b = makeBudget({ discretionary: [makeRow('Food')] })
+    const before = JSON.parse(JSON.stringify(b))
+    updateCellComment(b, 'discretionary', 0, 0, 'hello')
+    expect(b).toEqual(before)
   })
 })
 
@@ -985,6 +1051,120 @@ describe('BudgetView', () => {
     )
     // Food row + section total (500) bold; Idle row (0) is not.
     expect(boldCells.length).toBe(2)
+  })
+
+  it('hovering for 1500ms opens the comment popup; typing saves the comment and the icon appears', async () => {
+    const user = userEvent.setup()
+    const initial: Budget = {
+      name: 'B',
+      startMonth: '2026-01',
+      income: [],
+      bills: [],
+      discretionary: [makeRow('Food')],
+    }
+    let current = [initial]
+    // Wrap BudgetView in a stateful harness so the parent re-renders on
+    // each onChange — without that, the popup's controlled textarea keeps
+    // reading a stale empty comment and only the last char survives.
+    function Harness(): JSX.Element {
+      const [budgets, setBudgets] = useState<Budget[]>([initial])
+      return (
+        <BudgetView
+          budgets={budgets}
+          availableCategories={[]}
+          onChange={(next) => {
+            setBudgets(next)
+            current = next
+          }}
+          onAddCategory={vi.fn()}
+          {...subGridDefaults}
+        />
+      )
+    }
+    const { container } = render(<Harness />)
+
+    const cell = container.querySelector(
+      '[data-budget-section="discretionary"][data-budget-row="0"][data-budget-month="0"]',
+    ) as HTMLElement
+    expect(cell).not.toBeNull()
+    // No popup at first; no icon either.
+    expect(container.querySelector('.budget-comment-popup')).toBeNull()
+    expect(cell.classList.contains('budget-cell-has-comment')).toBe(false)
+
+    // Fake timers only for the hover countdown, then restore so userEvent.type
+    // can use real timers internally.
+    vi.useFakeTimers()
+    fireEvent.mouseEnter(cell)
+    act(() => {
+      vi.advanceTimersByTime(1500)
+    })
+    vi.useRealTimers()
+
+    const popup = container.querySelector('.budget-comment-popup')
+    expect(popup).not.toBeNull()
+    const textarea = popup!.querySelector('textarea') as HTMLTextAreaElement
+    expect(textarea.placeholder).toBe('Enter a comment here')
+    // No Clear button yet — comment is empty.
+    expect(popup!.querySelector('.budget-comment-clear')).toBeNull()
+
+    await user.type(textarea, 'Holiday spending')
+
+    expect(current[0].discretionary[0].comments?.[0]).toBe('Holiday spending')
+
+    // Harness has already re-rendered (it owns the budgets state). The icon
+    // should be lit and the Clear button visible.
+    const refreshedCell = container.querySelector(
+      '[data-budget-section="discretionary"][data-budget-row="0"][data-budget-month="0"]',
+    ) as HTMLElement
+    expect(refreshedCell.classList.contains('budget-cell-has-comment')).toBe(true)
+    expect(
+      container.querySelector('.budget-comment-clear'),
+    ).not.toBeNull()
+  })
+
+  it('the Clear button on the comment popup empties the cell comment', async () => {
+    vi.useFakeTimers()
+    const b: Budget = {
+      name: 'B',
+      startMonth: '2026-01',
+      income: [],
+      bills: [],
+      discretionary: [
+        {
+          category: 'Food',
+          amounts: new Array<number>(12).fill(0),
+          comments: ['Holidays', '', '', '', '', '', '', '', '', '', '', ''],
+        },
+      ],
+    }
+    let current = [b]
+    const onChange = vi.fn<(next: Budget[]) => void>((next) => {
+      current = next
+    })
+    const { container } = render(
+      <BudgetView
+        budgets={current}
+        availableCategories={[]}
+        onChange={onChange}
+        onAddCategory={vi.fn()}
+        {...subGridDefaults}
+      />,
+    )
+    const cell = container.querySelector(
+      '[data-budget-section="discretionary"][data-budget-row="0"][data-budget-month="0"]',
+    ) as HTMLElement
+    fireEvent.mouseEnter(cell)
+    // Wrap in act so the setState scheduled by the timer callback flushes.
+    act(() => {
+      vi.advanceTimersByTime(1500)
+    })
+    vi.useRealTimers()
+    const clearBtn = container.querySelector(
+      '.budget-comment-clear',
+    ) as HTMLButtonElement
+    expect(clearBtn).not.toBeNull()
+    fireEvent.click(clearBtn)
+    expect(current[0].discretionary[0].comments).toBeUndefined()
   })
 
   it('drag-copying a month cell horizontally fills the spanned cells with the source value', async () => {

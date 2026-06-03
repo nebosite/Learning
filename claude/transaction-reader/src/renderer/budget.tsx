@@ -424,6 +424,39 @@ export function budgetBottomLine(budget: Budget): number {
 }
 
 /**
+ * Set or clear a per-cell comment. Empty (or whitespace-only) clears.
+ * When the row's comments array ends up all-empty the field is dropped
+ * entirely so legacy budgets and unannotated rows stay clean on disk.
+ */
+export function updateCellComment(
+  budget: Budget,
+  section: BudgetSection,
+  rowIdx: number,
+  monthIdx: number,
+  comment: string,
+): Budget {
+  const row = budget[section][rowIdx]
+  if (!row) return budget
+  const value = comment
+  const current = row.comments?.[monthIdx] ?? ''
+  if (current === value) return budget
+  const comments = (row.comments ? row.comments.slice() : new Array<string>(12).fill(''))
+  while (comments.length < 12) comments.push('')
+  comments[monthIdx] = value
+  const allEmpty = comments.every((c) => c === '')
+  const nextRow: BudgetRow = allEmpty
+    ? (() => {
+        const { comments: _omit, ...rest } = row
+        return rest
+      })()
+    : { ...row, comments }
+  return {
+    ...budget,
+    [section]: budget[section].map((r, i) => (i === rowIdx ? nextRow : r)),
+  }
+}
+
+/**
  * Horizontal drag-copy state for the budget grid. The drag is constrained
  * to a single row; only the target month index changes as the cursor moves.
  */
@@ -554,6 +587,15 @@ export function BudgetView({
   const [fillDrag, setFillDrag] = useState<BudgetFillDrag | null>(null)
   const fillDragRef = useRef<BudgetFillDrag | null>(null)
   fillDragRef.current = fillDrag
+  // The cell whose comment popup is open, with the screen rect we anchor the
+  // popup against. Cleared on Escape, click-outside, or when the user opens
+  // another cell's editor.
+  const [commentPopup, setCommentPopup] = useState<{
+    section: BudgetSection
+    row: number
+    month: number
+    anchor: { top: number; left: number; bottom: number; right: number }
+  } | null>(null)
   // Currently-selected month cell — drives the sub-grid below. Editing a cell
   // also selects it, but Escape closes the editor while selection persists.
   const [selectedCell, setSelectedCell] = useState<{
@@ -591,6 +633,57 @@ export function BudgetView({
     setEditingBudgeted(null)
     setFillDrag({ section, row, sourceMonth: month, currentMonth: month })
   }
+
+  function openCommentPopup(
+    section: BudgetSection,
+    row: number,
+    month: number,
+    cellRect: DOMRect,
+  ): void {
+    setCommentPopup({
+      section,
+      row,
+      month,
+      anchor: {
+        top: cellRect.top,
+        left: cellRect.left,
+        bottom: cellRect.bottom,
+        right: cellRect.right,
+      },
+    })
+  }
+
+  function setCellComment(
+    section: BudgetSection,
+    row: number,
+    month: number,
+    comment: string,
+  ): void {
+    applyToSelected((b) =>
+      updateCellComment(b, section, row, month, comment),
+    )
+  }
+
+  // Close the popup on Escape or a click outside its own DOM. Click-outside
+  // uses mousedown so the dismissal happens before the new target's click
+  // handler runs (so e.g. clicking a different cell still opens its editor).
+  useEffect(() => {
+    if (!commentPopup) return
+    function onMouseDown(e: MouseEvent): void {
+      const t = e.target
+      if (t instanceof Element && t.closest('.budget-comment-popup')) return
+      setCommentPopup(null)
+    }
+    function onKey(e: KeyboardEvent): void {
+      if (e.key === 'Escape') setCommentPopup(null)
+    }
+    window.addEventListener('mousedown', onMouseDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', onMouseDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [commentPopup])
 
   // While a drag is active, track the cursor with elementFromPoint to find the
   // hovered cell (constrained to the source's row) and resolve to a copy on
@@ -812,6 +905,7 @@ export function BudgetView({
           selectedCell={selectedCell}
           fillDrag={fillDrag}
           onStartFill={startFillDrag}
+          onRequestComment={openCommentPopup}
           monthlyCategorySums={monthlyCategorySums}
           monthsWithRecords={monthsWithRecords}
           addingSection={addingSection}
@@ -925,6 +1019,25 @@ export function BudgetView({
           onCreate={handleCreate}
         />
       )}
+
+      {selected && commentPopup && (
+        <CommentPopup
+          anchor={commentPopup.anchor}
+          comment={
+            selected[commentPopup.section][commentPopup.row]?.comments?.[
+              commentPopup.month
+            ] ?? ''
+          }
+          onChange={(c) =>
+            setCellComment(
+              commentPopup.section,
+              commentPopup.row,
+              commentPopup.month,
+              c,
+            )
+          }
+        />
+      )}
     </div>
   )
 }
@@ -940,6 +1053,13 @@ interface BudgetGridProps {
   fillDrag: BudgetFillDrag | null
   /** Called when the user mousedowns on a cell's fill handle. */
   onStartFill: (section: BudgetSection, row: number, month: number) => void
+  /** Called when a cell's hover timer fires; opens the comment popup. */
+  onRequestComment: (
+    section: BudgetSection,
+    row: number,
+    month: number,
+    cellRect: DOMRect,
+  ) => void
   /** Per (category-lower | YYYY-MM) sum + count of non-ignored records. */
   monthlyCategorySums: Map<string, { sum: number; count: number }>
   /** YYYY-MM months that have at least one non-ignored record (any category). */
@@ -980,6 +1100,7 @@ function BudgetGrid({
   selectedCell,
   fillDrag,
   onStartFill,
+  onRequestComment,
   monthlyCategorySums,
   monthsWithRecords,
   addingSection,
@@ -1139,6 +1260,7 @@ function BudgetGrid({
                         monthIndex={mi}
                         value={row.amounts[mi] ?? 0}
                         status={status}
+                        comment={row.comments?.[mi] ?? ''}
                         editing={
                           editing?.section === sec.id &&
                           editing.row === ri &&
@@ -1155,6 +1277,9 @@ function BudgetGrid({
                         onCancel={onCancelEdit}
                         onCommit={(v) => onCommitEdit(sec.id, ri, mi, v)}
                         onFillStart={() => onStartFill(sec.id, ri, mi)}
+                        onRequestComment={(rect) =>
+                          onRequestComment(sec.id, ri, mi, rect)
+                        }
                       />
                     )
                   })}
@@ -1279,6 +1404,8 @@ interface BudgetCellProps {
   monthIndex: number
   value: number
   status: CellStatus
+  /** Current comment text. `''` means no comment. */
+  comment: string
   editing: boolean
   selected: boolean
   /** True when an active drag-copy's span covers this cell. */
@@ -1289,7 +1416,11 @@ interface BudgetCellProps {
   onCommit: (value: number) => void
   /** Begin a horizontal drag-copy from this cell. */
   onFillStart: () => void
+  /** Called by the 1500ms hover timer; opens the comment popup at the cell. */
+  onRequestComment: (cellRect: DOMRect) => void
 }
+
+const COMMENT_HOVER_MS = 1500
 
 function BudgetCell({
   section,
@@ -1297,6 +1428,7 @@ function BudgetCell({
   monthIndex,
   value,
   status,
+  comment,
   editing,
   selected,
   inFillRange,
@@ -1305,7 +1437,26 @@ function BudgetCell({
   onCancel,
   onCommit,
   onFillStart,
+  onRequestComment,
 }: BudgetCellProps): JSX.Element {
+  const hoverTimerRef = useRef<number | null>(null)
+
+  function startHoverTimer(e: React.MouseEvent<HTMLTableCellElement>): void {
+    if (hoverTimerRef.current !== null) return
+    const td = e.currentTarget
+    hoverTimerRef.current = window.setTimeout(() => {
+      hoverTimerRef.current = null
+      onRequestComment(td.getBoundingClientRect())
+    }, COMMENT_HOVER_MS)
+  }
+  function clearHoverTimer(): void {
+    if (hoverTimerRef.current === null) return
+    window.clearTimeout(hoverTimerRef.current)
+    hoverTimerRef.current = null
+  }
+  // Cancel any pending timer on unmount so we don't open a popup against a
+  // cell that's just been removed.
+  useEffect(() => clearHoverTimer, [])
   const [input, setInput] = useState(() => String(value))
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -1323,9 +1474,10 @@ function BudgetCell({
     const negativeClass = value < 0 ? ' budget-cell-negative' : ''
     const fillClass = inFillRange ? ' budget-cell-fill-target' : ''
     const selectedClass = selected ? ' budget-cell-selected' : ''
+    const commentClass = comment !== '' ? ' budget-cell-has-comment' : ''
     return (
       <td
-        className={`budget-cell${statusClass}${negativeClass}${fillClass}${selectedClass}`}
+        className={`budget-cell${statusClass}${negativeClass}${fillClass}${selectedClass}${commentClass}`}
         data-budget-section={section}
         data-budget-row={rowIndex}
         data-budget-month={monthIndex}
@@ -1333,6 +1485,8 @@ function BudgetCell({
           onSelect()
           onStart()
         }}
+        onMouseEnter={startHoverTimer}
+        onMouseLeave={clearHoverTimer}
       >
         {formatBudgetAmount(value)}
         <span
@@ -1533,6 +1687,58 @@ interface SectionAdderProps {
   categories: string[]
   onCommit: (name: string) => void
   onCancel: () => void
+}
+
+interface CommentPopupProps {
+  /** Cell rectangle used to anchor the popup below it. */
+  anchor: { top: number; left: number; bottom: number; right: number }
+  comment: string
+  onChange: (comment: string) => void
+}
+
+/**
+ * Floating editor for a budget cell's comment. Rendered at the panel level
+ * so it can escape the budget table's `overflow: hidden` clipping. Click-
+ * outside and Escape dismissal live in the parent (BudgetView); this just
+ * owns the textarea and a Clear button when a comment exists. Edits are
+ * propagated live via onChange so they're never lost on unmount.
+ */
+function CommentPopup({
+  anchor,
+  comment,
+  onChange,
+}: CommentPopupProps): JSX.Element {
+  const ref = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    ref.current?.focus()
+  }, [])
+  return (
+    <div
+      className="budget-comment-popup"
+      style={{
+        position: 'fixed',
+        top: anchor.bottom + 4,
+        left: anchor.left,
+      }}
+    >
+      <textarea
+        ref={ref}
+        className="budget-comment-textarea"
+        value={comment}
+        placeholder="Enter a comment here"
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {comment !== '' && (
+        <button
+          type="button"
+          className="budget-comment-clear"
+          onClick={() => onChange('')}
+        >
+          Clear this comment
+        </button>
+      )}
+    </div>
+  )
 }
 
 /**
