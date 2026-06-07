@@ -3,15 +3,15 @@
     90px                /* Ignored */
     100px               /* Date */
     140px               /* Account */
-    120px               /* Merchant */
-    180px               /* Category */
+    150px               /* Merchant */
+    220px               /* Category */
     100px               /* Amount */
     minmax(260px, 1fr)  /* Statement (only flexible column) */
-    100px               /* Notes */
+    200px               /* Notes */
     50px                /* Tags */
     100px               /* Owner */
     36px;               /* Delete */
-  --grid-min-width: 1166px;
+  --grid-min-width: 1446px;
   height: calc(100vh - 180px);
   overflow: auto;
   border: 1px solid #ddd;

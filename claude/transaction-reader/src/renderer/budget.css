@@ -333,17 +333,17 @@
   user-select: none;
 }
 
-/* Tiny document-corner marker rendered in a cell's upper-left when a
-   comment exists. Uses the cell's existing position: relative anchor. */
+/* Page-facing-up indicator rendered in a cell's upper-left when a comment
+   exists. Uses the cell's existing position: relative anchor; the right-
+   aligned value text flows beneath it without overlap because the emoji
+   sits in the upper-left corner. */
 .budget-cell-has-comment::before {
-  content: '';
+  content: '📄';
   position: absolute;
   top: 0;
-  left: 0;
-  width: 0;
-  height: 0;
-  border-top: 6px solid #d97706;
-  border-right: 6px solid transparent;
+  left: 1px;
+  font-size: 10px;
+  line-height: 1;
   pointer-events: none;
 }
 
@@ -377,6 +377,29 @@
   border-radius: 3px;
   background: white;
   color: #111;
+}
+
+/* Read-only display of the comment when the popup is in display mode. */
+.budget-comment-display {
+  min-height: 40px;
+  padding: 2px 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #111;
+  cursor: pointer;
+}
+
+.budget-comment-placeholder {
+  color: #888;
+  font-style: italic;
+}
+
+/* Over/under line that explains how spending compares to the budget cell. */
+.budget-comment-overunder {
+  padding-top: 4px;
+  border-top: 1px solid #eee;
+  color: #444;
+  font-size: 12px;
 }
 
 .budget-comment-textarea:focus {

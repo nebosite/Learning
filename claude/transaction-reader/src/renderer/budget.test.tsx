@@ -1100,12 +1100,19 @@ describe('BudgetView', () => {
     })
     vi.useRealTimers()
 
-    const popup = container.querySelector('.budget-comment-popup')
+    const popup = container.querySelector(
+      '.budget-comment-popup',
+    ) as HTMLElement
     expect(popup).not.toBeNull()
-    const textarea = popup!.querySelector('textarea') as HTMLTextAreaElement
+    // The popup opens in display mode — read-only paragraph, no textarea.
+    expect(popup.querySelector('.budget-comment-display')).not.toBeNull()
+    expect(popup.querySelector('textarea')).toBeNull()
+    // Clicking the popup promotes it to edit mode.
+    fireEvent.click(popup)
+    const textarea = popup.querySelector('textarea') as HTMLTextAreaElement
     expect(textarea.placeholder).toBe('Enter a comment here')
     // No Clear button yet — comment is empty.
-    expect(popup!.querySelector('.budget-comment-clear')).toBeNull()
+    expect(popup.querySelector('.budget-comment-clear')).toBeNull()
 
     await user.type(textarea, 'Holiday spending')
 
@@ -1159,12 +1166,57 @@ describe('BudgetView', () => {
       vi.advanceTimersByTime(1500)
     })
     vi.useRealTimers()
+    // Popup opens in display mode; click promotes it so the Clear button
+    // appears.
+    const popup = container.querySelector(
+      '.budget-comment-popup',
+    ) as HTMLElement
+    fireEvent.click(popup)
     const clearBtn = container.querySelector(
       '.budget-comment-clear',
     ) as HTMLButtonElement
     expect(clearBtn).not.toBeNull()
     fireEvent.click(clearBtn)
     expect(current[0].discretionary[0].comments).toBeUndefined()
+  })
+
+  it('the comment popup shows an over/under-budget line when spending differs from the cell value', () => {
+    vi.useFakeTimers()
+    // Food has $100 budgeted for the first month; -$150 of records came in
+    // for "food" that same month → $50 over budget.
+    const b: Budget = {
+      name: 'B',
+      startMonth: '2026-01',
+      income: [],
+      bills: [],
+      discretionary: [
+        makeRow('Food', [100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+      ],
+    }
+    const records: TransactionRecord[] = [
+      makeRecord({ date: '2026-01-12', category: 'Food', amount: -150 }),
+    ]
+    const { container } = render(
+      <BudgetView
+        budgets={[b]}
+        availableCategories={[]}
+        onChange={vi.fn()}
+        onAddCategory={vi.fn()}
+        {...subGridDefaults}
+        records={records}
+      />,
+    )
+    const cell = container.querySelector(
+      '[data-budget-section="discretionary"][data-budget-row="0"][data-budget-month="0"]',
+    ) as HTMLElement
+    fireEvent.mouseEnter(cell)
+    act(() => {
+      vi.advanceTimersByTime(1500)
+    })
+    vi.useRealTimers()
+    const overUnder = container.querySelector('.budget-comment-overunder')
+    expect(overUnder).not.toBeNull()
+    expect(overUnder?.textContent).toBe('Spending is $50 over budget.')
   })
 
   it('drag-copying a month cell horizontally fills the spanned cells with the source value', async () => {
