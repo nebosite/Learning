@@ -719,6 +719,22 @@ describe('autofillBudget', () => {
     autofillBudget(records, b, now)
     expect(b).toEqual(before)
   })
+
+  it('sorts the Discretionary section alphabetically (case-insensitive) — existing rows and newly-added rows both end up in order', () => {
+    const b = makeBudget({
+      startMonth: '2026-06',
+      discretionary: [makeRow('zoo'), makeRow('Apple'), makeRow('mango')],
+    })
+    // A record under a brand-new category should also land in the sorted
+    // position, not appended at the end.
+    const records = [
+      makeRecord({ date: '2025-06-10', category: 'Banana', amount: -10 }),
+    ]
+    const next = autofillBudget(records, b, now)
+    expect(next.discretionary.map((r) => r.category)).toEqual([
+      'Apple', 'Banana', 'mango', 'zoo',
+    ])
+  })
 })
 
 describe('recordsForBudgetCell', () => {

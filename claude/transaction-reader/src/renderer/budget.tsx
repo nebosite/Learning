@@ -369,6 +369,12 @@ export function autofillBudget(
     }
   }
 
+  // Discretionary always lands sorted alphabetically (case-insensitive) so
+  // newly-added rows from this run aren't just appended to the bottom.
+  next.discretionary.sort((a, b) =>
+    a.category.toLowerCase().localeCompare(b.category.toLowerCase()),
+  )
+
   return next
 }
 
